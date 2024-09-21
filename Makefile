@@ -29,7 +29,28 @@ replace-pem: tmp/ips ## 証明書をreplaceして、Nginxを再起動
 ################################################################################
 .PHONY: setup-tools
 setup-tools: tmp/ips ## 各Hostでツール群をインストール
-	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo apt update && sudo apt install -y percona-toolkit psmisc tmux tree make jq neovim git"
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo apt-get update && sudo apt-get install -y percona-toolkit psmisc tmux tree make jq neovim git"
+
+################################################################################
+# nginx
+################################################################################
+.PHONY: replace-nginx-conf
+replace-nginx-conf: tmp/ips ## nginxのログのjson化など
+	@cat tmp/ips | grep -v '#' | xargs -I{} scp -i ${SSH_KEY_PATH} nginx/nginx.conf isucon@{}:/tmp/nginx.conf
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo mv /tmp/nginx.conf /etc/nginx/nginx.conf && sudo chown root:root /etc/nginx/nginx.conf && sudo chmod 644 /etc/nginx/nginx.conf"
+
+.PHONY: clean-nginx-log-and-reload
+clean-nginx-log-and-reload: tmp/ips ## nginxのログを削除して、再起動
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo rm -f /var/log/nginx/access.log /var/log/nginx/error.log && sudo systemctl reload nginx"
+
+################################################################################
+# 最低限のセットアップ
+################################################################################
+.PHONY: setup-basic
+setup-basic: tmp/ips ## 最低限のセットアップ
+	@make setup-tools
+	@make replace-nginx-conf
+	@make clean-nginx-log-and-reload
 
 ################################################################################
 # プログラミング言語の切り替え
