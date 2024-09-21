@@ -25,6 +25,20 @@ replace-pem: tmp/ips ## 証明書をreplaceして、Nginxを再起動
 	@cat tmp/ips | grep -v '#' | xargs -I{} bash -c 'echo "----[ isucon@{}のNginxを再起動 ]" && ssh isucon@{} -i ${SSH_KEY_PATH} "sudo systemctl reload nginx"'
 
 ################################################################################
+# NewRelic
+################################################################################
+.PHONY: add-newrelic-user-for-mysql
+add-newrelic-user-for-mysql: tmp/ips ## MySQLにnewrelicユーザーを追加
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo mysql -e \"create user if not exists 'newrelic'@'localhost' identified by 'newrelic';\""
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo mysql -e \"grant replication client on *.* to 'newrelic'@'localhost';\""
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo mysql -e \"grant select on *.* to 'newrelic'@'localhost';\""
+
+.PHONY: install-newrelic
+install-newrelic: tmp/ips ## newrelicを導入
+	@cat tmp/ips | sed 's/#//g' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "(command -v /usr/local/bin/newrelic && /usr/local/bin/newrelic --version) || (curl -Ls https://download.newrelic.com/install/newrelic-cli/scripts/install.sh | bash)"
+	@cat tmp/ips | sed 's/#//g' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo NEW_RELIC_API_KEY=${NEW_RELIC_API_KEY} NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY} NEW_RELIC_ACCOUNT_ID=${NEW_RELIC_ACCOUNT_ID} /usr/local/bin/newrelic install -y"
+
+################################################################################
 # エラー文言
 ################################################################################
 cloudformation.yml:
