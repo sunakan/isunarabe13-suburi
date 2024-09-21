@@ -30,6 +30,8 @@ replace-pem: tmp/ips ## 証明書をreplaceして、Nginxを再起動
 .PHONY: setup-tools
 setup-tools: tmp/ips ## 各Hostでツール群をインストール
 	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "sudo apt-get update && sudo apt-get install -y percona-toolkit psmisc tmux tree make jq neovim git"
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "test -d /tmp/alp || git clone https://github.com/tkuchiki/alp.git /tmp/alp"
+	@cat tmp/ips | grep -v '#' | xargs -I{} ssh isucon@{} -i ${SSH_KEY_PATH} "command -v alp || (cd /tmp/alp && /home/isucon/local/golang/bin/go build -o /tmp/alp/alp /tmp/alp/cmd/alp/main.go && sudo install /tmp/alp/alp /usr/local/bin/alp)"
 
 ################################################################################
 # nginx
