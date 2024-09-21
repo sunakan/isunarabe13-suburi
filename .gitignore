@@ -6,3 +6,6 @@ cloudformation.yml
 !tmp/
 tmp/*
 !tmp/.gitkeep
+
+# .env にクレデンシャルを入れる
+.env
