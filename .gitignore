@@ -1,0 +1,8 @@
+# ISUNARABEからDLするCFnファイルは公開してはいけない
+cloudformation.yml
+
+
+# tmp/.gitkeep以外をignore
+!tmp/
+tmp/*
+!tmp/.gitkeep
