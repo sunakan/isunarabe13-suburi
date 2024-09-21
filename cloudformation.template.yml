@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  ISUNARABE-13 v1.0
+Parameters:
+  AmiId:
+    Type: String
+    Default: "ami-07c40ed2fa3662241"
+  SetupToken:
+    Type: String
+    Default: "${ENV_SETUP_TOKEN}"
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "192.168.0.0/16"
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: "192.168.0.0/24"
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: False
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+    DependsOn:
+      - Subnet
+      - RouteTable
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for ISUNARABE-12Q
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: "${ENV_MY_IP}"
+        - IpProtocol: tcp
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: "${ENV_MY_IP}"
+        - IpProtocol: -1
+          CidrIp: "192.168.0.0/24"
+
+  BenchmarkerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: c5.large
+      SubnetId: !Ref Subnet
+      PrivateIpAddress: "192.168.0.100"
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isu13-bench
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #cloud-config
+            runcmd:
+              - 'curl --retry 5 --retry-connrefused --max-time 10 --connect-timeout 5 -H "Authorization: Bearer ${SETUP_TOKEN}" "https://api.isunarabe.org/api/setup/authorized_keys" | sudo -u isucon sh -c "umask 077; cat >> /home/isucon/.ssh/authorized_keys"'
+              - 'sudo SETUP_TOKEN="${SETUP_TOKEN}" /opt/bench/bootstrap.sh'
+          - SETUP_TOKEN: !Ref SetupToken
+  BenchmarkerInstanceIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BenchmarkerInstance
+  QualifyInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      PrivateIpAddress: "192.168.0.11"
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isu13-1
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #cloud-config
+            runcmd:
+              - 'curl --retry 5 --retry-connrefused --max-time 10 --connect-timeout 5 -H "Authorization: Bearer ${SETUP_TOKEN}" "https://api.isunarabe.org/api/setup/authorized_keys" | sudo -u isucon sh -c "umask 077; cat >> /home/isucon/.ssh/authorized_keys"'
+          - SETUP_TOKEN: !Ref SetupToken
+  QualifyInstanceIP1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref QualifyInstance1
+  QualifyInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      PrivateIpAddress: "192.168.0.12"
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isu13-2
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #cloud-config
+            runcmd:
+              - 'curl --retry 5 --retry-connrefused --max-time 10 --connect-timeout 5 -H "Authorization: Bearer ${SETUP_TOKEN}" "https://api.isunarabe.org/api/setup/authorized_keys" | sudo -u isucon sh -c "umask 077; cat >> /home/isucon/.ssh/authorized_keys"'
+          - SETUP_TOKEN: !Ref SetupToken
+  QualifyInstanceIP2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref QualifyInstance2
+  QualifyInstance3:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet
+      PrivateIpAddress: "192.168.0.13"
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: isu13-3
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #cloud-config
+            runcmd:
+              - 'curl --retry 5 --retry-connrefused --max-time 10 --connect-timeout 5 -H "Authorization: Bearer ${SETUP_TOKEN}" "https://api.isunarabe.org/api/setup/authorized_keys" | sudo -u isucon sh -c "umask 077; cat >> /home/isucon/.ssh/authorized_keys"'
+          - SETUP_TOKEN: !Ref SetupToken
+  QualifyInstanceIP3:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref QualifyInstance3
