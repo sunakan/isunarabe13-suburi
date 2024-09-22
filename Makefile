@@ -70,6 +70,14 @@ clean-nginx-log-and-reload: tmp/servers ## Nginxのログを削除して、再�
 true-interpolate-params: ## InterpolateParams=trueにして、アプリをビルド&再起動
 	@bash scripts/true-interpolate-params.sh
 
+.PHONY: rsync-app-and-build-and-restart
+rsync-app-and-build-and-restart: tmp/webapp-servers ## アプリをrsyncしてビルド&再起動
+	@cat tmp/webapp-servers | xargs -I{} rsync -az -e ssh --exclude=".idea" --exclude=".tool-versions" --exclude=".gitignore" ./rsync-webapp-go/  {}:/home/isucon/webapp/go/
+	@cat tmp/webapp-servers | xargs -I{} ssh {} "mkdir -p /home/isucon/webapp/public/images"
+	@cat tmp/webapp-servers | xargs -I{} ssh {} "export PATH=\$$PATH:/home/isucon/local/golang/bin && cd /home/isucon/webapp/go && make build && sudo systemctl restart isupipe-go"
+	@cat tmp/webapp-servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" ./nginx/rsync-etc-nginx-sites-available-isupipe.conf {}:/etc/nginx/sites-available/isupipe.conf
+	@cat tmp/webapp-servers | xargs -I{} ssh {} "sudo chown root:root /etc/nginx/sites-available/isupipe.conf && sudo chmod 644 /etc/nginx/sites-available/isupipe.conf && sudo nginx -t && sudo systemctl reload nginx"
+
 ################################################################################
 # 最低限のセットアップ
 ################################################################################
@@ -118,6 +126,7 @@ pt-query-digest: ## pt-query-digestでスロークエリを分析(brew install p
 .PHONY: clean-log
 clean-log: ## MySQL, Nginxのログをリセットする
 	@bash scripts/clean-log.sh
+	@cat tmp/webapp-servers | xargs -I{} ssh {} "rm -rf /home/isucon/webapp/public/images/*"
 
 ################################################################################
 # NewRelic

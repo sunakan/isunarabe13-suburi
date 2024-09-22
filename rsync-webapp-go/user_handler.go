@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -111,6 +113,12 @@ func getIconHandler(c echo.Context) error {
 		} else {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon: "+err.Error())
 		}
+	}
+	// 画像をファイルに保存
+	// エラーが発生しても処理を続行し、ログに記録
+	imagePath := filepath.Join("/home/isucon/webapp/public/images", user.Name+".jpeg")
+	if err := os.WriteFile(imagePath, image, 0644); err != nil {
+		log.Printf("Failed to save image for user %s: %v", user.Name, err)
 	}
 
 	return c.Blob(http.StatusOK, "image/jpeg", image)
