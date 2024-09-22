@@ -95,6 +95,10 @@ alp: ## alpでnginxのログを分析(brew install alp)
 pt-query-digest: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
 	pt-query-digest tmp/analysis/latest/mysql-slow.log.*
 
+.PHONY: clean-log
+clean-log: ## MySQL, Nginxのログをリセットする
+	@bash scripts/clean-log.sh
+
 ################################################################################
 # NewRelic
 ################################################################################
