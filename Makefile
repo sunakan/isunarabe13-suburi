@@ -40,6 +40,17 @@ setup-tools: tmp/servers ## 各Hostでツール群をインストール
 enable-mysql-slowquery-log: ## MySQLのslowqueryログ等を有効化
 	@bash scripts/enable-mysql-slowquery-log.sh
 
+.PHONY: mysql-bind-address-0000
+mysql-bind-address-0000: ## MySQLのbind-addressを0.0.0.0にする
+	@bash scripts/mysql-bind-address-0000.sh
+
+.PHONY: create-mysql-user
+create-mysql-user: tmp/db-servers ## MySQLのユーザーを作成(user: isucon, pass: isucon)
+	@cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql -e \"create user if not exists 'isucon'@'%' identified by 'isucon';\""
+	@cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql -e \"grant all privileges on isupipe.* to 'isucon'@'%';\""
+	@cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql -e \"grant all privileges on isudns.* to 'isucon'@'%';\""
+	@cat tmp/db-servers | xargs -I{} ssh {} "sudo systemctl restart mysql"
+
 ################################################################################
 # Nginx
 ################################################################################
@@ -60,6 +71,8 @@ setup-basic: ## 最低限のセットアップ
 	@make setup-tools
 	@make replace-nginx-conf
 	@make clean-nginx-log-and-reload
+	@make mysql-bind-address-0000
+	@make create-mysql-user
 	@make enable-mysql-slowquery-log
 
 ################################################################################
