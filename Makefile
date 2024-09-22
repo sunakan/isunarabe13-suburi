@@ -41,15 +41,15 @@ enable-mysql-slowquery-log: ## MySQLのslowqueryログ等を有効化
 	@bash scripts/enable-mysql-slowquery-log.sh
 
 ################################################################################
-# nginx
+# Nginx
 ################################################################################
 .PHONY: replace-nginx-conf
-replace-nginx-conf: tmp/servers ## nginxのログのjson化など
+replace-nginx-conf: tmp/servers ## Nginxのログのjson化など
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} scp nginx/nginx.conf {}:/tmp/nginx.conf
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo mv /tmp/nginx.conf /etc/nginx/nginx.conf && sudo chown root:root /etc/nginx/nginx.conf && sudo chmod 644 /etc/nginx/nginx.conf"
 
 .PHONY: clean-nginx-log-and-reload
-clean-nginx-log-and-reload: tmp/servers ## nginxのログを削除して、再起動
+clean-nginx-log-and-reload: tmp/servers ## Nginxのログを削除して、再起動
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo rm -f /var/log/nginx/access.log /var/log/nginx/error.log && sudo systemctl reload nginx"
 
 ################################################################################
