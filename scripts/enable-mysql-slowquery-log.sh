@@ -3,8 +3,8 @@ set -eu
 
 #
 # INPUT: tmp/db-servers
-# OUTPUT1: tmp/mysql/YYYY-MM-DDTHH:mm:ssZ/mysql.conf.before
-# OUTPUT2: tmp/mysql/YYYY-MM-DDTHH:mm:ssZ/mysql.conf.after
+# OUTPUT1: tmp/mysql/YYYY-MM-DDTHH:mm:ssZ/mysqld.cnf.before
+# OUTPUT2: tmp/mysql/YYYY-MM-DDTHH:mm:ssZ/mysqld.cnf.after
 # OUTPUT3: tmp/mysql/YYYY-MM-DDTHH:mm:ssZ/diff
 #
 # したいこと1: 指定した秒数以上かかったクエリをスロークエリとしてログを出すconfを作成
@@ -17,8 +17,8 @@ set -eu
 readonly INPUT_FILE="tmp/db-servers"
 readonly CURRENT_TIME="$(TZ='Asia/Tokyo' date +"%Y-%m-%dT%H:%M:%S%z")"
 readonly OUTPUT_DIR_PATH="tmp/mysql/${CURRENT_TIME}"
-readonly OUTPUT_FILE_1="${OUTPUT_DIR_PATH}/mysql.conf.before"
-readonly OUTPUT_FILE_2="${OUTPUT_DIR_PATH}/mysql.conf.after"
+readonly OUTPUT_FILE_1="${OUTPUT_DIR_PATH}/mysqld.cnf.before"
+readonly OUTPUT_FILE_2="${OUTPUT_DIR_PATH}/mysqld.cnf.after"
 
 if [ ! -f ${INPUT_FILE} ]; then
   echo "${INPUT_FILE} がありません。用意してください"
