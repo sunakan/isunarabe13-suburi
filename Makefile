@@ -81,6 +81,21 @@ switch-ruby: tmp/servers## isupipeの言語をrubyにする(再起動)
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl enable --now isupipe-ruby"
 
 ################################################################################
+# 分析
+################################################################################
+.PHONY: download-files-for-analysis
+download-files-for-analysis: tmp/servers ## 分析用のファイルをダウンロード
+	@bash scripts/download-files-for-analysis.sh
+
+.PHONY: alp
+alp: ## alpでnginxのログを分析(brew install alp)
+	alp json --sort sum -r -o count,method,uri,min,avg,max,sum --file tmp/analysis/latest/nginx-access.log.* -m '/api/user/\w+/statistics,/api/user/\w+/icon,/api/user/\w+/theme,/api/livestream/\d+/livecomment,/api/livestream/\d+/reaction,/api/livestream/\d+/moderate,/api/livestream/\d+/report,/api/livestream/\d+/ngwords,/api/livestream/\d+/exit,/api/livestream/\d+/enter,/api/livestream/\d+/statistics,/api/livestream/\d+'
+
+.PHONY: pt-query-digest
+pt-query-digest: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
+	pt-query-digest tmp/analysis/latest/mysql-slow.log.*
+
+################################################################################
 # NewRelic
 ################################################################################
 .PHONY: add-newrelic-user-for-mysql
