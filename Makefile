@@ -64,6 +64,13 @@ clean-nginx-log-and-reload: tmp/servers ## Nginxのログを削除して、再�
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo rm -f /var/log/nginx/access.log /var/log/nginx/error.log && sudo systemctl reload nginx"
 
 ################################################################################
+# アプリ
+################################################################################
+.PHONY: true-interpolate-params
+true-interpolate-params: ## InterpolateParams=trueにして、アプリをビルド&再起動
+	@bash scripts/true-interpolate-params.sh
+
+################################################################################
 # 最低限のセットアップ
 ################################################################################
 .PHONY: setup-basic
