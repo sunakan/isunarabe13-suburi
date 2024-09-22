@@ -34,6 +34,13 @@ setup-tools: tmp/servers ## 各Hostでツール群をインストール
 	@cat tmp/servers | xargs -I{} ssh {} "command -v alp || (cd /tmp/alp && /home/isucon/local/golang/bin/go build -o /tmp/alp/alp /tmp/alp/cmd/alp/main.go && sudo install /tmp/alp/alp /usr/local/bin/alp)"
 
 ################################################################################
+# MySQL
+################################################################################
+.PHONY: enable-mysql-slowquery-log
+enable-mysql-slowquery-log: ## MySQLのslowqueryログ等を有効化
+	@bash scripts/enable-mysql-slowquery-log.sh
+
+################################################################################
 # nginx
 ################################################################################
 .PHONY: replace-nginx-conf
@@ -53,6 +60,7 @@ setup-basic: ## 最低限のセットアップ
 	@make setup-tools
 	@make replace-nginx-conf
 	@make clean-nginx-log-and-reload
+	@make enable-mysql-slowquery-log
 
 ################################################################################
 # プログラミング言語の切り替え
