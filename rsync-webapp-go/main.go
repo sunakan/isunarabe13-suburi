@@ -150,11 +150,11 @@ func temp() {
 		return
 	}
 	defer dbConn.Close()
-	query := `select
-  livecomments.id as "livecomment_id"
-  , livecomments.comment as "livecomment_comment"
-  , livecomments.tip as "livecomment_tip"
-  , livecomments.created_at as "livecomment_created_at"
+	query := `
+select
+  reactions.id as "reaction_id"
+  , reactions.emoji_name as "reaction_emoji_name"
+  , reactions.created_at as "reaction_created_at"
   , users.id as "user_id"
   , users.name as "user_name"
   , users.display_name as "user_display_name"
@@ -176,41 +176,45 @@ func temp() {
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
   , livestream_owner_icons.image as "livestream_owner_icon_image"
-  , (select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livecomments.livestream_id) as "livestream_tags"
-from livecomments
-inner join users on users.id = livecomments.user_id
+  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = reactions.livestream_id), '[]') as "livestream_tags"
+from reactions
+inner join users on users.id = reactions.user_id
 inner join themes on themes.user_id = users.id
 left join icons on icons.user_id = users.id
-inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join livestreams on livestreams.id = reactions.livestream_id
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
 left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
-where livecomments.livestream_id = 7507
+where reactions.livestream_id = ?
+order by created_at desc
 ;`
-	livecommentModel2s := []LivecommentModel2{}
-	err = dbConn.Select(&livecommentModel2s, query)
-	if err != nil {
-		log.Fatalf("クエリ実行エラー: %v", err)
+	reactionModels := []ReactionModel2{}
+	if err := dbConn.Select(&reactionModels, query, 7497); err != nil {
+		fmt.Printf("DB: クエリ失敗: %v", err)
 	}
-	for i, livecommentModel2 := range livecommentModel2s {
-		fmt.Printf("%d: %d, %s\n", i, livecommentModel2.Livecomment_ID, livecommentModel2.Livestream_Tags)
+	for i, reactionModel := range reactionModels {
+		fmt.Printf("%d: %d, %s\n", i, reactionModel.Reaction_ID, reactionModel.Livestream_Tags)
 	}
 	var tags []Tag
-	err = json.Unmarshal([]byte(livecommentModel2s[0].Livestream_Tags), &tags)
-	if err != nil {
-		fmt.Println("JSONのデコードエラー:", err)
+	if len(reactionModels) > 0 {
+		err = json.Unmarshal([]byte(reactionModels[0].Livestream_Tags), &tags)
+		if err != nil {
+			fmt.Println("JSONのデコードエラー:", err)
+		}
+		fmt.Printf("%+v\n", tags)
+		fmt.Println("-----")
+		fmt.Println(reactionModels[0].Icon_Image)
+		fmt.Println(len(reactionModels[0].Icon_Image) == 0)
+		fmt.Println(fallbackImageHash)
+		fmt.Println("-----")
+	} else {
+		fmt.Println("データなし")
 	}
-	fmt.Printf("%+v\n", tags)
-	fmt.Println("-----")
-	fmt.Println(livecommentModel2s[0].Icon_Image)
-	fmt.Println(len(livecommentModel2s[0].Icon_Image) == 0)
-	fmt.Println(fallbackImageHash)
-	fmt.Println("-----")
 }
 
 func main() {
 	if false {
-		println("HelloWorld-1")
+		println("デバッグ用")
 		temp()
 		return
 	}

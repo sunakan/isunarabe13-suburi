@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +20,44 @@ type ReactionModel struct {
 	UserID       int64  `db:"user_id"`
 	LivestreamID int64  `db:"livestream_id"`
 	CreatedAt    int64  `db:"created_at"`
+}
+
+// kaizen-02: 1発で取得(N+1を解決する)
+type ReactionModel2 struct {
+	// reactions
+	Reaction_ID        int64  `db:"reaction_id"`
+	Reaction_EmojiName string `db:"reaction_emoji_name"`
+	Reaction_CreatedAt int64  `db:"reaction_created_at"`
+	// users
+	User_ID          int64  `db:"user_id"`
+	User_Name        string `db:"user_name"`
+	User_DisplayName string `db:"user_display_name"`
+	User_Description string `db:"user_description"`
+	// themes
+	Theme_ID       int64 `db:"theme_id"`
+	Theme_DarkMode bool  `db:"theme_dark_mode"`
+	// icons
+	Icon_Image []byte `db:"icon_image"`
+	// livestreams
+	Livestream_ID           int64  `db:"livestream_id"`
+	Livestream_Title        string `db:"livestream_title"`
+	Livestream_Description  string `db:"livestream_description"`
+	Livestream_PlaylistUrl  string `db:"livestream_playlist_url"`
+	Livestream_ThumbnailUrl string `db:"livestream_thumbnail_url"`
+	Livestream_StartAt      int64  `db:"livestream_start_at"`
+	Livestream_EndAt        int64  `db:"livestream_end_at"`
+	// livestream_owners
+	LivestreamOwner_ID          int64  `db:"livestream_owner_id"`
+	LivestreamOwner_Name        string `db:"livestream_owner_name"`
+	LivestreamOwner_DisplayName string `db:"livestream_owner_display_name"`
+	LivestreamOwner_Description string `db:"livestream_owner_description"`
+	// livestream_owner_themes
+	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
+	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
+	// livestream_owner_icons
+	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
+	// tags
+	Livestream_Tags string `db:"livestream_tags"`
 }
 
 type Reaction struct {
@@ -52,7 +91,46 @@ func getReactionsHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	query := "SELECT * FROM reactions WHERE livestream_id = ? ORDER BY created_at DESC"
+	// kaizen-02: 1発で取得(N+1を解決する)
+	// query := "SELECT * FROM reactions WHERE livestream_id = ? ORDER BY created_at DESC"
+	query := `
+select
+  reactions.id as "reaction_id"
+  , reactions.emoji_name as "reaction_emoji_name"
+  , reactions.created_at as "reaction_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , icons.image as "icon_image"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = reactions.livestream_id), '[]') as "livestream_tags"
+from reactions
+inner join users on users.id = reactions.user_id
+inner join themes on themes.user_id = users.id
+left join icons on icons.user_id = users.id
+inner join livestreams on livestreams.id = reactions.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+where reactions.livestream_id = ?
+order by created_at desc
+`
 	if c.QueryParam("limit") != "" {
 		limit, err := strconv.Atoi(c.QueryParam("limit"))
 		if err != nil {
@@ -61,19 +139,74 @@ func getReactionsHandler(c echo.Context) error {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	reactionModels := []ReactionModel{}
+	// kaizen-02: 1発で取得(N+1を解決する)
+	//reactionModels := []ReactionModel{}
+	reactionModels := []ReactionModel2{}
 	if err := tx.SelectContext(ctx, &reactionModels, query, livestreamID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
+	// kaizen-02: tagsのUnmarshalは1回だけにして、使い回す
+	var tags []Tag
+	if len(reactionModels) > 0 {
+		err = json.Unmarshal([]byte(reactionModels[0].Livestream_Tags), &tags)
+		if err != nil {
+			fmt.Println("JSONのデコードエラー:", err)
+		}
+	}
+
 	reactions := make([]Reaction, len(reactionModels))
 	for i := range reactionModels {
-		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
+		// kaizen-02: 1発で取得(N+1を解決する)
+		// reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
+		// if err != nil {
+		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
+		// }
+		iconHash := fallbackImageHash
+		livestreamOwnerIconHash := fallbackImageHash
+		if len(reactionModels[i].Icon_Image) > 0 {
+			iconHash = fmt.Sprintf("%x", sha256.Sum256(reactionModels[i].Icon_Image))
 		}
-
-		reactions[i] = reaction
+		if len(reactionModels[i].LivestreamOwnerIcon_Image) > 0 {
+			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(reactionModels[i].LivestreamOwnerIcon_Image))
+		}
+		reactions[i] = Reaction{
+			ID:        reactionModels[i].Reaction_ID,
+			EmojiName: reactionModels[i].Reaction_EmojiName,
+			User: User{
+				ID:          reactionModels[i].User_ID,
+				Name:        reactionModels[i].User_Name,
+				DisplayName: reactionModels[i].User_DisplayName,
+				Description: reactionModels[i].User_Description,
+				Theme: Theme{
+					ID:       reactionModels[i].Theme_ID,
+					DarkMode: reactionModels[i].Theme_DarkMode,
+				},
+				IconHash: iconHash,
+			},
+			Livestream: Livestream{
+				ID: reactionModels[i].Livestream_ID,
+				Owner: User{
+					ID:          reactionModels[i].LivestreamOwner_ID,
+					Name:        reactionModels[i].LivestreamOwner_Name,
+					DisplayName: reactionModels[i].LivestreamOwner_DisplayName,
+					Description: reactionModels[i].LivestreamOwner_Description,
+					Theme: Theme{
+						ID:       reactionModels[i].LivestreamOwnerTheme_ID,
+						DarkMode: reactionModels[i].LivestreamOwnerTheme_DarkMode,
+					},
+					IconHash: livestreamOwnerIconHash,
+				},
+				Title:        reactionModels[i].Livestream_Title,
+				Description:  reactionModels[i].Livestream_Description,
+				PlaylistUrl:  reactionModels[i].Livestream_PlaylistUrl,
+				ThumbnailUrl: reactionModels[i].Livestream_ThumbnailUrl,
+				Tags:         tags,
+				StartAt:      reactionModels[i].Livestream_StartAt,
+				EndAt:        reactionModels[i].Livestream_EndAt,
+			},
+			CreatedAt: reactionModels[i].Reaction_CreatedAt,
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
