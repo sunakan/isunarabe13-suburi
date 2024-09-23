@@ -5,13 +5,15 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 
 	"github.com/go-sql-driver/mysql"
@@ -151,71 +153,188 @@ func temp() {
 	}
 	defer dbConn.Close()
 	query := `
+with scores as (
 select
-  reactions.id as "reaction_id"
-  , reactions.emoji_name as "reaction_emoji_name"
-  , reactions.created_at as "reaction_created_at"
-  , users.id as "user_id"
-  , users.name as "user_name"
-  , users.display_name as "user_display_name"
-  , users.description as "user_description"
-  , themes.id as "theme_id"
-  , themes.dark_mode as "theme_dark_mode"
-  , icons.image as "icon_image"
-  , livestreams.id as "livestream_id"
-  , livestreams.title as "livestream_title"
-  , livestreams.description as "livestream_description"
-  , livestreams.playlist_url as "livestream_playlist_url"
-  , livestreams.thumbnail_url as "livestream_thumbnail_url"
-  , livestreams.start_at as "livestream_start_at"
-  , livestreams.end_at as "livestream_end_at"
-  , livestream_owners.id as "livestream_owner_id"
-  , livestream_owners.name as "livestream_owner_name"
-  , livestream_owners.display_name as "livestream_owner_display_name"
-  , livestream_owners.description as "livestream_owner_description"
-  , livestream_owner_themes.id as "livestream_owner_theme_id"
-  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
-  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = reactions.livestream_id), '[]') as "livestream_tags"
-from reactions
-inner join users on users.id = reactions.user_id
-inner join themes on themes.user_id = users.id
-left join icons on icons.user_id = users.id
-inner join livestreams on livestreams.id = reactions.livestream_id
-inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
-inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
-where reactions.livestream_id = ?
-order by created_at desc
-;`
-	reactionModels := []ReactionModel2{}
-	if err := dbConn.Select(&reactionModels, query, 7497); err != nil {
-		fmt.Printf("DB: クエリ失敗: %v", err)
+  users.id as user_id
+  , users.name as user_name
+  , IFNULL((select count(1) from livestreams inner join reactions on reactions.livestream_id = livestreams.id where livestreams.user_id = users.id), 0) as total_reactions
+  , IFNULL((select sum(livecomments.tip) from livestreams inner join livecomments on livecomments.livestream_id = livestreams.id where livestreams.user_id = users.id), 0) as total_tip
+from users
+), user_ranking as (
+select
+  scores.user_id as user_id
+  , scores.user_name
+  , scores.total_reactions
+  , scores.total_tip
+  , ROW_NUMBER() over (order by (scores.total_reactions+scores.total_tip) desc, scores.user_name desc) as "rank"
+from scores
+)
+select
+  user_ranking.rank
+  , user_ranking.total_reactions
+  , (select count(1) from livestreams inner join livecomments on livecomments.livestream_id = livestreams.id where livestreams.user_id = user_ranking.user_id) as total_livecomments
+  , user_ranking.total_tip
+  , (select count(1) from livestreams inner join livestream_viewers_history on livestream_viewers_history.livestream_id = livestreams.id where livestreams.user_id = user_ranking.user_id) as viewers_count
+  , IFNULL((select reactions.emoji_name from livestreams inner join reactions on reactions.livestream_id = livestreams.id where livestreams.user_id = user_ranking.user_id group by reactions.emoji_name order by count(1) desc, reactions.emoji_name desc limit 1), '') as favorite_emoji
+from user_ranking
+where user_ranking.user_name = ?
+;
+`
+	stats := UserStatistics{}
+	if err := dbConn.Get(&stats, query, "suzukitsubasa0"); err != nil {
+		fmt.Printf("DB: クエリ失敗: %v\n", err)
 	}
-	for i, reactionModel := range reactionModels {
-		fmt.Printf("%d: %d, %s\n", i, reactionModel.Reaction_ID, reactionModel.Livestream_Tags)
+	fmt.Printf("Get→ %+v", stats)
+}
+
+func temp2() {
+	conf := mysql.NewConfig()
+	conf.Net = "tcp"
+	conf.Addr = net.JoinHostPort("3.114.172.224", "3306")
+	conf.User = "isucon"
+	conf.Passwd = "isucon"
+	conf.DBName = "isupipe"
+	conf.ParseTime = true
+	conf.InterpolateParams = true
+	dbConn, err := sqlx.Open("mysql", conf.FormatDSN())
+	if err != nil {
+		println("DB: 接続失敗")
+		println(err)
+		return
 	}
-	var tags []Tag
-	if len(reactionModels) > 0 {
-		err = json.Unmarshal([]byte(reactionModels[0].Livestream_Tags), &tags)
-		if err != nil {
-			fmt.Println("JSONのデコードエラー:", err)
+	dbConn.SetMaxOpenConns(10)
+	if err := dbConn.Ping(); err != nil {
+		println("DB: Ping失敗")
+		println(err)
+		return
+	}
+	defer dbConn.Close()
+
+	username := "suzukitsubasa0"
+
+	var user UserModel
+	if err := dbConn.Get(&user, "SELECT * FROM users WHERE name = ?", username); err != nil {
+		fmt.Printf("aaa %+v\n", err)
+	}
+	// ランク算出
+	var users []*UserModel
+	if err := dbConn.Select(&users, "SELECT * FROM users"); err != nil {
+		fmt.Printf("bbb %+v\n", err)
+	}
+	var ranking UserRanking
+	for _, user := range users {
+		var reactions int64
+		query := `
+			SELECT COUNT(*) FROM users u
+			INNER JOIN livestreams l ON l.user_id = u.id
+			INNER JOIN reactions r ON r.livestream_id = l.id
+			WHERE u.id = ?`
+		if err := dbConn.Get(&reactions, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("ccc %+v\n", err)
 		}
-		fmt.Printf("%+v\n", tags)
-		fmt.Println("-----")
-		fmt.Println(reactionModels[0].Icon_Image)
-		fmt.Println(len(reactionModels[0].Icon_Image) == 0)
-		fmt.Println(fallbackImageHash)
-		fmt.Println("-----")
-	} else {
-		fmt.Println("データなし")
+		var tips int64
+		query = `
+			SELECT IFNULL(SUM(l2.tip), 0) FROM users u
+			INNER JOIN livestreams l ON l.user_id = u.id
+			INNER JOIN livecomments l2 ON l2.livestream_id = l.id
+			WHERE u.id = ?`
+		if err := dbConn.Get(&tips, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("ddd %+v\n", err)
+		}
+
+		score := reactions + tips
+		ranking = append(ranking, UserRankingEntry{
+			Username: user.Name,
+			Score:    score,
+		})
 	}
+	sort.Sort(ranking)
+
+	var rank int64 = 1
+	for i := len(ranking) - 1; i >= 0; i-- {
+		entry := ranking[i]
+		if entry.Username == username {
+			break
+		}
+		rank++
+	}
+
+	// リアクション数
+	var totalReactions int64
+	query := `SELECT COUNT(*) FROM users u
+	   INNER JOIN livestreams l ON l.user_id = u.id
+	   INNER JOIN reactions r ON r.livestream_id = l.id
+	   WHERE u.name = ?
+		`
+	if err := dbConn.Get(&totalReactions, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		fmt.Printf("eee %+v\n", err)
+	}
+
+	// ライブコメント数、チップ合計
+	var totalLivecomments int64
+	var totalTip int64
+	var livestreams []*LivestreamModel
+	if err := dbConn.Select(&livestreams, "SELECT * FROM livestreams WHERE user_id = ?", user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		fmt.Printf("fff %+v\n", err)
+	}
+
+	for _, livestream := range livestreams {
+		var livecomments []*LivecommentModel
+		if err := dbConn.Select(&livecomments, "SELECT * FROM livecomments WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("ggg %+v\n", err)
+		}
+
+		for _, livecomment := range livecomments {
+			totalTip += livecomment.Tip
+			totalLivecomments++
+		}
+	}
+
+	// 合計視聴者数
+	var viewersCount int64
+	for _, livestream := range livestreams {
+		var cnt int64
+		if err := dbConn.Get(&cnt, "SELECT COUNT(*) FROM livestream_viewers_history WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			fmt.Printf("hhh %+v\n", err)
+		}
+		viewersCount += cnt
+	}
+
+	// お気に入り絵文字
+	var favoriteEmoji string
+	query = `
+		SELECT r.emoji_name
+		FROM users u
+		INNER JOIN livestreams l ON l.user_id = u.id
+		INNER JOIN reactions r ON r.livestream_id = l.id
+		WHERE u.name = ?
+		GROUP BY emoji_name
+		ORDER BY COUNT(*) DESC, emoji_name DESC
+		LIMIT 1
+		`
+	if err := dbConn.Get(&favoriteEmoji, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		fmt.Printf("iii %+v\n", err)
+	}
+
+	stats := UserStatistics{
+		Rank:              rank,
+		ViewersCount:      viewersCount,
+		TotalReactions:    totalReactions,
+		TotalLivecomments: totalLivecomments,
+		TotalTip:          totalTip,
+		FavoriteEmoji:     favoriteEmoji,
+	}
+
+	fmt.Printf("--------------成功\n")
+	fmt.Printf("%+v\n", stats)
+	fmt.Printf("--------------成功\n")
 }
 
 func main() {
 	if false {
 		println("デバッグ用")
 		temp()
+		// temp2()
 		return
 	}
 	e := echo.New()
