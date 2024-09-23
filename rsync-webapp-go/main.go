@@ -4,6 +4,8 @@ package main
 // sqlx的な参考: https://jmoiron.github.io/sqlx/
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -38,6 +40,13 @@ func init() {
 	if secretKey, ok := os.LookupEnv("ISUCON13_SESSION_SECRETKEY"); ok {
 		secret = []byte(secretKey)
 	}
+
+	// kaizen-01: fallbackImageHashを事前に計算
+	img, err := os.ReadFile(fallbackImage)
+	if err != nil {
+		fmt.Printf("failed to read fallback image: %v", err)
+	}
+	fallbackImageHash = fmt.Sprintf("%x", sha256.Sum256(img))
 }
 
 type InitializeResponse struct {
@@ -119,7 +128,92 @@ func initializeHandler(c echo.Context) error {
 	})
 }
 
+func temp() {
+	conf := mysql.NewConfig()
+	conf.Net = "tcp"
+	conf.Addr = net.JoinHostPort("3.114.172.224", "3306")
+	conf.User = "isucon"
+	conf.Passwd = "isucon"
+	conf.DBName = "isupipe"
+	conf.ParseTime = true
+	conf.InterpolateParams = true
+	dbConn, err := sqlx.Open("mysql", conf.FormatDSN())
+	if err != nil {
+		println("DB: 接続失敗")
+		println(err)
+		return
+	}
+	dbConn.SetMaxOpenConns(10)
+	if err := dbConn.Ping(); err != nil {
+		println("DB: Ping失敗")
+		println(err)
+		return
+	}
+	defer dbConn.Close()
+	query := `select
+  livecomments.id as "livecomment_id"
+  , livecomments.comment as "livecomment_comment"
+  , livecomments.tip as "livecomment_tip"
+  , livecomments.created_at as "livecomment_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , icons.image as "icon_image"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+  , (select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livecomments.livestream_id) as "livestream_tags"
+from livecomments
+inner join users on users.id = livecomments.user_id
+inner join themes on themes.user_id = users.id
+left join icons on icons.user_id = users.id
+inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+where livecomments.livestream_id = 7507
+;`
+	livecommentModel2s := []LivecommentModel2{}
+	err = dbConn.Select(&livecommentModel2s, query)
+	if err != nil {
+		log.Fatalf("クエリ実行エラー: %v", err)
+	}
+	for i, livecommentModel2 := range livecommentModel2s {
+		fmt.Printf("%d: %d, %s\n", i, livecommentModel2.Livecomment_ID, livecommentModel2.Livestream_Tags)
+	}
+	var tags []Tag
+	err = json.Unmarshal([]byte(livecommentModel2s[0].Livestream_Tags), &tags)
+	if err != nil {
+		fmt.Println("JSONのデコードエラー:", err)
+	}
+	fmt.Printf("%+v\n", tags)
+	fmt.Println("-----")
+	fmt.Println(livecommentModel2s[0].Icon_Image)
+	fmt.Println(len(livecommentModel2s[0].Icon_Image) == 0)
+	fmt.Println(fallbackImageHash)
+	fmt.Println("-----")
+}
+
 func main() {
+	if false {
+		println("HelloWorld-1")
+		temp()
+		return
+	}
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(echolog.DEBUG)

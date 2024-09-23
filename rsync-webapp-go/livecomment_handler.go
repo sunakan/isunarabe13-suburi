@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -28,7 +29,43 @@ type LivecommentModel struct {
 	Tip          int64  `db:"tip"`
 	CreatedAt    int64  `db:"created_at"`
 }
-
+type LivecommentModel2 struct {
+	// livecomments
+	Livecomment_ID        int64  `db:"livecomment_id"`
+	Livecomment_Comment   string `db:"livecomment_comment"`
+	Livecomment_Tip       int64  `db:"livecomment_tip"`
+	Livecomment_CreatedAt int64  `db:"livecomment_created_at"`
+	// users
+	User_ID          int64  `db:"user_id"`
+	User_Name        string `db:"user_name"`
+	User_DisplayName string `db:"user_display_name"`
+	User_Description string `db:"user_description"`
+	// themes
+	Theme_ID       int64 `db:"theme_id"`
+	Theme_DarkMode bool  `db:"theme_dark_mode"`
+	// icons
+	Icon_Image []byte `db:"icon_image"`
+	// livestreams
+	Livestream_ID           int64  `db:"livestream_id"`
+	Livestream_Title        string `db:"livestream_title"`
+	Livestream_Description  string `db:"livestream_description"`
+	Livestream_PlaylistUrl  string `db:"livestream_playlist_url"`
+	Livestream_ThumbnailUrl string `db:"livestream_thumbnail_url"`
+	Livestream_StartAt      int64  `db:"livestream_start_at"`
+	Livestream_EndAt        int64  `db:"livestream_end_at"`
+	// livestream_owners
+	LivestreamOwner_ID          int64  `db:"livestream_owner_id"`
+	LivestreamOwner_Name        string `db:"livestream_owner_name"`
+	LivestreamOwner_DisplayName string `db:"livestream_owner_display_name"`
+	LivestreamOwner_Description string `db:"livestream_owner_description"`
+	// livestream_owner_themes
+	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
+	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
+	// livestream_owner_icons
+	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
+	// tags
+	Livestream_Tags string `db:"livestream_tags"`
+}
 type Livecomment struct {
 	ID         int64      `json:"id"`
 	User       User       `json:"user"`
@@ -84,7 +121,46 @@ func getLivecommentsHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	query := "SELECT * FROM livecomments WHERE livestream_id = ? ORDER BY created_at DESC"
+	// kaizen-01: 1発でもってくる
+	// query := "SELECT * FROM livecomments WHERE livestream_id = ? ORDER BY created_at DESC"
+	query := `select
+livecomments.id as "livecomment_id"
+  , livecomments.comment as "livecomment_comment"
+  , livecomments.tip as "livecomment_tip"
+  , livecomments.created_at as "livecomment_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , icons.image as "icon_image"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livecomments.livestream_id), '[]') as "livestream_tags"
+from livecomments
+inner join users on users.id = livecomments.user_id
+inner join themes on themes.user_id = users.id
+left join icons on icons.user_id = users.id
+inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+where livecomments.livestream_id = ?
+order by livecomments.created_at desc
+`
 	if c.QueryParam("limit") != "" {
 		limit, err := strconv.Atoi(c.QueryParam("limit"))
 		if err != nil {
@@ -93,7 +169,9 @@ func getLivecommentsHandler(c echo.Context) error {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	livecommentModels := []LivecommentModel{}
+	// kaizen-01: 1発で取得
+	//livecommentModels := []LivecommentModel{}
+	livecommentModels := []LivecommentModel2{}
 	err = tx.SelectContext(ctx, &livecommentModels, query, livestreamID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c.JSON(http.StatusOK, []*Livecomment{})
@@ -102,14 +180,68 @@ func getLivecommentsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
 	}
 
+	// kaizen-01: tagsのUnmarshalは1回だけにして、使い回す
+	var tags []Tag
+	if len(livecommentModels) > 0 {
+		err = json.Unmarshal([]byte(livecommentModels[0].Livestream_Tags), &tags)
+		if err != nil {
+			fmt.Println("JSONのデコードエラー:", err)
+		}
+	}
+
 	livecomments := make([]Livecomment, len(livecommentModels))
 	for i := range livecommentModels {
-		livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
+		// kaizen-01: 1発で取得したので、関数に投げない。ここでfillする
+		// livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
+		// if err != nil {
+		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
+		// }
+		iconHash := fallbackImageHash
+		livestreamOwnerIconHash := fallbackImageHash
+		if len(livecommentModels[i].Icon_Image) > 0 {
+			iconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModels[i].Icon_Image))
 		}
-
-		livecomments[i] = livecomment
+		if len(livecommentModels[i].LivestreamOwnerIcon_Image) > 0 {
+			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModels[i].LivestreamOwnerIcon_Image))
+		}
+		livecomments[i] = Livecomment{
+			ID: livecommentModels[i].Livecomment_ID,
+			User: User{
+				ID:          livecommentModels[i].User_ID,
+				Name:        livecommentModels[i].User_Name,
+				DisplayName: livecommentModels[i].User_DisplayName,
+				Description: livecommentModels[i].User_Description,
+				Theme: Theme{
+					ID:       livecommentModels[i].Theme_ID,
+					DarkMode: livecommentModels[i].Theme_DarkMode,
+				},
+				IconHash: iconHash,
+			},
+			Livestream: Livestream{
+				ID: livecommentModels[i].Livestream_ID,
+				Owner: User{
+					ID:          livecommentModels[i].LivestreamOwner_ID,
+					Name:        livecommentModels[i].LivestreamOwner_Name,
+					DisplayName: livecommentModels[i].LivestreamOwner_DisplayName,
+					Description: livecommentModels[i].LivestreamOwner_Description,
+					Theme: Theme{
+						ID:       livecommentModels[i].LivestreamOwnerTheme_ID,
+						DarkMode: livecommentModels[i].LivestreamOwnerTheme_DarkMode,
+					},
+					IconHash: livestreamOwnerIconHash,
+				},
+				Title:        livecommentModels[i].Livestream_Title,
+				Description:  livecommentModels[i].Livestream_Description,
+				PlaylistUrl:  livecommentModels[i].Livestream_PlaylistUrl,
+				ThumbnailUrl: livecommentModels[i].Livestream_ThumbnailUrl,
+				Tags:         tags,
+				StartAt:      livecommentModels[i].Livestream_StartAt,
+				EndAt:        livecommentModels[i].Livestream_EndAt,
+			},
+			Comment:   livecommentModels[i].Livecomment_Comment,
+			Tip:       livecommentModels[i].Livecomment_Tip,
+			CreatedAt: livecommentModels[i].Livecomment_CreatedAt,
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
