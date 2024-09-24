@@ -20,9 +20,13 @@ show-hosts: tmp/servers ## /etc/hostsに追加する記述をshow
 	done
 
 .PHONY: replace-pem
-replace-pem: tmp/servers ## 証明書をreplaceして、Nginxを再起動
-	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo wget -O /etc/nginx/tls/_.t.isucon.pw.crt ${FULLCHAIN_PEM_URL} && sudo wget -O /etc/nginx/tls/_.t.isucon.pw.key ${KEY_PEM_URL}"
-	@cat tmp/servers | grep -v 'bench' | xargs -I{} bash -c 'echo "----[ {}:Nginx 再起動 ]" && ssh {} "sudo systemctl reload nginx"'
+replace-pem: tmp/nginx-servers ## 証明書をreplaceして、Nginxを再起動
+	mkdir -p tmp/nginx-tls/
+	gh release view --repo KOBA789/t.isucon.pw --json assets --jq '.assets[] | select(.name == "key.pem" or .name == "fullchain.pem") | .url' | xargs -I{} curl -L --output-dir tmp/nginx-tls/ -O {}
+	mv tmp/nginx-tls/key.pem tmp/nginx-tls/_.t.isucon.pw.key
+	mv tmp/nginx-tls/fullchain.pem tmp/nginx-tls/_.t.isucon.pw.crt
+	@cat tmp/nginx-servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" tmp/nginx-tls/ {}:/etc/nginx/tls/
+	@cat tmp/nginx-servers | xargs -I{} bash -c 'echo "----[ {}:Nginx 再起動 ]" && ssh {} "sudo systemctl reload nginx"'
 
 ################################################################################
 # 各Hostで入れておきたいツール群
