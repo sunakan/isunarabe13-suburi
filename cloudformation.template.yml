@@ -65,12 +65,16 @@ Resources:
           CidrIp: "${ENV_MY_IP}"
         - IpProtocol: -1
           CidrIp: "192.168.0.0/24"
+        - IpProtocol: -1
+          CidrIp: "${ENV_MY_IP}"
 
   BenchmarkerInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmiId
       InstanceType: c5.large
+      SecurityGroupIds:
+        - !Ref SecurityGroup
       SubnetId: !Ref Subnet
       PrivateIpAddress: "192.168.0.100"
       BlockDeviceMappings:
