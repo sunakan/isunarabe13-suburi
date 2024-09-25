@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,29 @@ type LivestreamModel struct {
 	ThumbnailUrl string `db:"thumbnail_url" json:"thumbnail_url"`
 	StartAt      int64  `db:"start_at" json:"start_at"`
 	EndAt        int64  `db:"end_at" json:"end_at"`
+}
+
+type LivestreamModel2 struct {
+	// livestreams
+	Livestream_ID           int64  `db:"livestream_id"`
+	Livestream_Title        string `db:"livestream_title"`
+	Livestream_Description  string `db:"livestream_description"`
+	Livestream_PlaylistUrl  string `db:"livestream_playlist_url"`
+	Livestream_ThumbnailUrl string `db:"livestream_thumbnail_url"`
+	Livestream_StartAt      int64  `db:"livestream_start_at"`
+	Livestream_EndAt        int64  `db:"livestream_end_at"`
+	// livestream_owners
+	LivestreamOwner_ID          int64  `db:"livestream_owner_id"`
+	LivestreamOwner_Name        string `db:"livestream_owner_name"`
+	LivestreamOwner_DisplayName string `db:"livestream_owner_display_name"`
+	LivestreamOwner_Description string `db:"livestream_owner_description"`
+	// livestream_owner_themes
+	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
+	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
+	// livestream_owner_icons
+	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
+	// tags
+	Livestream_Tags string `db:"livestream_tags"`
 }
 
 type Livestream struct {
@@ -180,34 +204,92 @@ func searchLivestreamsHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var livestreamModels []*LivestreamModel
+	var livestreamModels []*LivestreamModel2
 	if c.QueryParam("tag") != "" {
-		// タグによる取得
-		var tagIDList []int
-		if err := tx.SelectContext(ctx, &tagIDList, "SELECT id FROM tags WHERE name = ?", keyTagName); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
-		}
+		// kaizen-04: 1発で取得
+		//// タグによる取得
+		//var tagIDList []int
+		//if err := tx.SelectContext(ctx, &tagIDList, "SELECT id FROM tags WHERE name = ?", keyTagName); err != nil {
+		//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
+		//}
 
-		query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id IN (?) ORDER BY livestream_id DESC", tagIDList)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to construct IN query: "+err.Error())
-		}
-		var keyTaggedLivestreams []*LivestreamTagModel
-		if err := tx.SelectContext(ctx, &keyTaggedLivestreams, query, params...); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get keyTaggedLivestreams: "+err.Error())
-		}
+		//query, params, err := sqlx.In("SELECT * FROM livestream_tags WHERE tag_id IN (?) ORDER BY livestream_id DESC", tagIDList)
+		//if err != nil {
+		//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to construct IN query: "+err.Error())
+		//}
+		//var keyTaggedLivestreams []*LivestreamTagModel
+		//if err := tx.SelectContext(ctx, &keyTaggedLivestreams, query, params...); err != nil {
+		//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get keyTaggedLivestreams: "+err.Error())
+		//}
 
-		for _, keyTaggedLivestream := range keyTaggedLivestreams {
-			ls := LivestreamModel{}
-			if err := tx.GetContext(ctx, &ls, "SELECT * FROM livestreams WHERE id = ?", keyTaggedLivestream.LivestreamID); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
-			}
+		//for _, keyTaggedLivestream := range keyTaggedLivestreams {
+		//	ls := LivestreamModel{}
+		//	if err := tx.GetContext(ctx, &ls, "SELECT * FROM livestreams WHERE id = ?", keyTaggedLivestream.LivestreamID); err != nil {
+		//		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
+		//	}
 
-			livestreamModels = append(livestreamModels, &ls)
+		//	livestreamModels = append(livestreamModels, &ls)
+		//}
+		query := `
+with livestream_ids as (
+select livestream_tags.livestream_id
+from tags
+inner join livestream_tags on tags.id = livestream_tags.tag_id
+where tags.name = ?
+)
+select
+  livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livestreams.id), '[]') as "livestream_tags"
+from livestreams
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+where livestreams.id in (select livestream_ids.livestream_id from livestream_ids)
+order by livestream_id desc
+;`
+		if err := tx.SelectContext(ctx, &livestreamModels, query, keyTagName); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
 		}
 	} else {
-		// 検索条件なし
-		query := `SELECT * FROM livestreams ORDER BY id DESC`
+		// kaizen-04: 1発で取得
+		// // 検索条件なし
+		// query := `SELECT * FROM livestreams ORDER BY id DESC`
+		query := `
+select
+  livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livestreams.id), '[]') as "livestream_tags"
+from livestreams
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+order by livestream_id desc
+`
 		if c.QueryParam("limit") != "" {
 			limit, err := strconv.Atoi(c.QueryParam("limit"))
 			if err != nil {
@@ -220,18 +302,49 @@ func searchLivestreamsHandler(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
 
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i := range livestreamModels {
-		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
+		// kaizen-04: 1発で取得
+		// livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
+		// if err != nil {
+		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
+		// }
+		livestreamOwnerIconHash := fallbackImageHash
+		if len(livestreamModels[i].LivestreamOwnerIcon_Image) > 0 {
+			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livestreamModels[i].LivestreamOwnerIcon_Image))
 		}
-		livestreams[i] = livestream
-	}
+		var tags []Tag
+		err = json.Unmarshal([]byte(livestreamModels[i].Livestream_Tags), &tags)
+		if err != nil {
+			fmt.Println("JSONのデコードエラー:", err)
+		}
+		livestream := Livestream{
+			ID: livestreamModels[i].Livestream_ID,
+			Owner: User{
+				ID:          livestreamModels[i].LivestreamOwner_ID,
+				Name:        livestreamModels[i].LivestreamOwner_Name,
+				DisplayName: livestreamModels[i].LivestreamOwner_DisplayName,
+				Description: livestreamModels[i].LivestreamOwner_Description,
+				Theme: Theme{
+					ID:       livestreamModels[i].LivestreamOwnerTheme_ID,
+					DarkMode: livestreamModels[i].LivestreamOwnerTheme_DarkMode,
+				},
+				IconHash: livestreamOwnerIconHash,
+			},
+			Title:        livestreamModels[i].Livestream_Title,
+			Description:  livestreamModels[i].Livestream_Description,
+			PlaylistUrl:  livestreamModels[i].Livestream_PlaylistUrl,
+			ThumbnailUrl: livestreamModels[i].Livestream_ThumbnailUrl,
+			Tags:         tags,
+			StartAt:      livestreamModels[i].Livestream_StartAt,
+			EndAt:        livestreamModels[i].Livestream_EndAt,
+		}
 
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+		livestreams[i] = livestream
 	}
 
 	return c.JSON(http.StatusOK, livestreams)
