@@ -33,9 +33,7 @@ replace-pem: tmp/nginx-servers ## 証明書をreplaceして、Nginxを再起動
 ################################################################################
 .PHONY: setup-tools
 setup-tools: tmp/servers ## 各Hostでツール群をインストール
-	@cat tmp/servers | xargs -I{} ssh {} "sudo apt-get update && sudo apt-get install -y percona-toolkit psmisc tmux tree make jq neovim git"
-	@cat tmp/servers | xargs -I{} ssh {} "test -d /tmp/alp || git clone https://github.com/tkuchiki/alp.git /tmp/alp"
-	@cat tmp/servers | xargs -I{} ssh {} "command -v alp || (cd /tmp/alp && /home/isucon/local/golang/bin/go build -o /tmp/alp/alp /tmp/alp/cmd/alp/main.go && sudo install /tmp/alp/alp /usr/local/bin/alp)"
+	@cat tmp/servers | xargs -I{} ssh {} "sudo apt-get update && sudo apt-get install -y psmisc tmux tree make jq neovim git"
 
 ################################################################################
 # MySQL
