@@ -19,15 +19,6 @@ show-hosts: tmp/servers ## /etc/hostsに追加する記述をshow
 	  echo "$${ip} test00$${n}.t.isucon.pw"; \
 	done
 
-.PHONY: replace-pem
-replace-pem: tmp/nginx-servers ## 証明書をreplaceして、Nginxを再起動
-	mkdir -p tmp/nginx-tls/
-	gh release view --repo KOBA789/t.isucon.pw --json assets --jq '.assets[] | select(.name == "key.pem" or .name == "fullchain.pem") | .url' | xargs -I{} curl -L --output-dir tmp/nginx-tls/ -O {}
-	mv tmp/nginx-tls/key.pem tmp/nginx-tls/_.t.isucon.pw.key
-	mv tmp/nginx-tls/fullchain.pem tmp/nginx-tls/_.t.isucon.pw.crt
-	@cat tmp/nginx-servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" tmp/nginx-tls/ {}:/etc/nginx/tls/
-	@cat tmp/nginx-servers | xargs -I{} bash -c 'echo "----[ {}:Nginx 再起動 ]" && ssh {} "sudo systemctl reload nginx"'
-
 ################################################################################
 # 各Hostで入れておきたいツール群
 ################################################################################
@@ -56,6 +47,15 @@ create-mysql-user: tmp/db-servers ## MySQLのユーザーを作成(user: isucon,
 ################################################################################
 # Nginx
 ################################################################################
+.PHONY: replace-pem
+replace-pem: tmp/nginx-servers ## 証明書をreplaceして、Nginxを再起動
+	mkdir -p tmp/nginx-tls/
+	gh release view --repo KOBA789/t.isucon.pw --json assets --jq '.assets[] | select(.name == "key.pem" or .name == "fullchain.pem") | .url' | xargs -I{} curl -L --output-dir tmp/nginx-tls/ -O {}
+	mv tmp/nginx-tls/key.pem tmp/nginx-tls/_.t.isucon.pw.key
+	mv tmp/nginx-tls/fullchain.pem tmp/nginx-tls/_.t.isucon.pw.crt
+	@cat tmp/nginx-servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" tmp/nginx-tls/ {}:/etc/nginx/tls/
+	@cat tmp/nginx-servers | xargs -I{} bash -c 'echo "----[ {}:Nginx 再起動 ]" && ssh {} "sudo systemctl reload nginx"'
+
 .PHONY: replace-nginx-conf
 replace-nginx-conf: tmp/servers ## Nginxのログのjson化など
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} scp nginx/nginx.conf {}:/tmp/nginx.conf
