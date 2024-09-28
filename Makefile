@@ -89,6 +89,7 @@ rsync-app-and-build-and-restart: tmp/webapp-servers ## アプリをrsyncして�
 	@cat tmp/webapp-servers | xargs -I{} ssh {} "export PATH=\$$PATH:/home/isucon/local/golang/bin && cd /home/isucon/webapp/go && make build && sudo systemctl restart isupipe-go"
 	@cat tmp/webapp-servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" ./nginx/rsync-etc-nginx-sites-available-isupipe.conf {}:/etc/nginx/sites-available/isupipe.conf
 	@cat tmp/webapp-servers | xargs -I{} ssh {} "sudo chown root:root /etc/nginx/sites-available/isupipe.conf && sudo chmod 644 /etc/nginx/sites-available/isupipe.conf && sudo nginx -t && sudo systemctl reload nginx"
+	@make clean-log
 
 ################################################################################
 # 最低限のセットアップ
