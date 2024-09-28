@@ -92,6 +92,10 @@ rsync-app-and-build-and-restart: tmp/webapp-servers ## アプリをrsyncして�
 	@cat tmp/webapp-servers | xargs -I{} ssh {} "sudo chown root:root /etc/nginx/sites-available/isupipe.conf && sudo chmod 644 /etc/nginx/sites-available/isupipe.conf && sudo nginx -t && sudo systemctl reload nginx"
 	@make clean-log
 
+.PHONY: replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS
+replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS: tmp/webapp-servers ## ISUCON13_MYSQL_DIALCONFIG_ADDRESSをDB専用のIPに置換する
+	@cat tmp/webapp-servers | xargs -I{} ssh {} "sed -i '/ISUCON13_MYSQL_DIALCONFIG_ADDRESS/d' ~/env.sh && echo 'ISUCON13_MYSQL_DIALCONFIG_ADDRESS=\"192.168.0.13\"' >> ~/env.sh"
+
 ################################################################################
 # PowerDNS
 ################################################################################
@@ -158,6 +162,8 @@ kaizen: ## 続きからやるためのやつ
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestreams add index user_id_idx (user_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table reactions add index livestream_id_idx (livestream_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table ng_words add index livestream_id_idx (livestream_id);'"
+	make replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS
+	make replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS
 	make rsync-app-and-build-and-restart
 
 ################################################################################
