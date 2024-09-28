@@ -92,6 +92,15 @@ rsync-app-and-build-and-restart: tmp/webapp-servers ## アプリをrsyncして�
 	@make clean-log
 
 ################################################################################
+# PowerDNS
+################################################################################
+.PHONY: setup-pdns
+setup-pdns: tmp/servers ## PowerDNSのセットアップ
+	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo mkdir -p /var/log/pdns/ && sudo chown -R pdns:pdns /var/log/pdns/"
+	@cat tmp/servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/systemd/system/pdns.service.d/isudns.conf {}:/etc/systemd/system/pdns.service.d/isudns.conf
+	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl daemon-reload && sudo systemctl restart pdns"
+
+################################################################################
 # 最低限のセットアップ
 ################################################################################
 .PHONY: setup-basic
