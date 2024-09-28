@@ -19,6 +19,7 @@ set -eu
 
 readonly INPUT_FILE_1="tmp/db-servers"
 readonly INPUT_FILE_2="tmp/nginx-servers"
+readonly INPUT_FILE_3="tmp/dns-servers"
 readonly CURRENT_TIME="$(TZ='Asia/Tokyo' date +"%Y-%m-%dT%H:%M:%S%z")"
 readonly OUTPUT_DIR_PATH="tmp/analysis/${CURRENT_TIME}"
 
@@ -34,10 +35,15 @@ if [ ! -f ${INPUT_FILE_2} ]; then
   exit 1
 fi
 
+if [ ! -f ${INPUT_FILE_3} ]; then
+  echo "${INPUT_FILE_3} がありません。用意してください"
+  exit 1
+fi
+
 mkdir -p "${OUTPUT_DIR_PATH}"
 
 #
-# MySQLとNginx
+# MySQLとNginxとPowerDNSのログをDL
 #
 while read server; do
   rsync -az -e ssh ${server}:/etc/mysql/mysql.conf.d/mysqld.cnf ${OUTPUT_DIR_PATH}/mysqld.cnf.${server}
@@ -52,6 +58,12 @@ while read server; do
   rsync -az -e ssh ${server}:/var/log/nginx/error.log ${OUTPUT_DIR_PATH}/nginx-error.log.${server}
   echo "${server}: Nginxの分析用ファイル群をDLしました"
 done < ${INPUT_FILE_2}
+while read server; do
+  rsync -az -e ssh ${server}:/etc/systemd/system/pdns.service.d/isudns.conf ${OUTPUT_DIR_PATH}/system-pdns-isudns.conf.${server}
+  rsync -az -e ssh ${server}:/var/log/pdns/pdns.log ${OUTPUT_DIR_PATH}/pdns.log.${server}
+  rsync -az -e ssh ${server}:/var/log/pdns/pdns-error.log ${OUTPUT_DIR_PATH}/pdns-error.log.${server}
+  echo "${server}: PowerDNSの分析用ファイル群をDLしました"
+done < ${INPUT_FILE_3}
 
 #
 # シンボリックリンクを張り直す
