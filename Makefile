@@ -3,6 +3,16 @@ build-cfn: cloudformation.yml ## CFnファイルをbuild
 	@([ -e tmp/cloudformation.yml ] && echo 'build済みです') || (echo 'buildします' && bash scripts/build-cfn.sh)
 	@diff -ur cloudformation.yml tmp/cloudformation.yml | delta
 
+.PHONY: ssh-config-for-isucon
+ssh-config-for-isucon:
+	@mkdir -p ~/.ssh/config-for-isucon.d
+	@aws ec2 describe-instances --output json --query 'Reservations[].Instances[]' \
+	| jq -rc '.[] | {ip: .NetworkInterfaces[0].Association.PublicIp, name: .Tags[] | select(.Key == "Name") | .Value}' \
+	| jq -src '. | sort_by(.name)[] | ["isu-\(.name | split("-")[1])", .ip] | @csv' \
+	| sed 's/"//g' \
+	| awk -F, '{print "Host "$$1"\n  HostName "$$2"\n  User isucon\n  IdentityFile ~/.ssh/id_rsa\n  StrictHostKeyChecking no"}' > ~/.ssh/config-for-isucon.d/config
+	@chmod 644 ~/.ssh/config-for-isucon.d/config
+
 .PHONY: check-authorized-keys
 check-authorized-keys: cloudformation.yml ## ISUNARABEに登録する時のSSHの公開鍵
 	$(eval SETUP_TOKEN := $(shell cat cloudformation.yml | rq -yJ | jq -r '.Parameters.SetupToken.Default'))
