@@ -24,8 +24,8 @@ check-ssh: tmp/servers ## CFnでEC2を設置して、sshできるか確認する
 
 .PHONY: show-hosts
 show-hosts: tmp/servers ## /etc/hostsに追加する記述をshow
-	@grep -A1 'isu-1' ~/.ssh/config | grep HostName | cut -d' ' -f4 | xargs -I{} echo "{} pipe.t.isucon.pw"
-	@grep -A1 'isu-' ~/.ssh/config | grep HostName | cut -d' ' -f4 | nl | while read n ip; do \
+	@grep -A1 'isu-1' ~/.ssh/config-for-isucon.d/config | grep HostName | cut -d' ' -f4 | xargs -I{} echo "{} pipe.t.isucon.pw"
+	@grep -A1 -E 'isu-\d' ~/.ssh/config-for-isucon.d/config | grep HostName | cut -d' ' -f4 | nl | while read n ip; do \
 	  echo "$${ip} test00$${n}.t.isucon.pw"; \
 	done
 
