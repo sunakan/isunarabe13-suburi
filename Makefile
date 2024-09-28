@@ -122,6 +122,20 @@ switch-ruby: tmp/servers## isupipeの言語をrubyにする(再起動)
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl enable --now isupipe-ruby"
 
 ################################################################################
+# Kaizen
+################################################################################
+.PHONY: kaizen
+kaizen: ## Kaizen
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestream_tags add index livestream_id_idx (livestream_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table icons add index user_id_idx (user_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table themes add index user_id_idx (user_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livecomments add index livestream_id_idx (livestream_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestreams add index user_id_idx (user_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table reactions add index livestream_id_idx (livestream_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table ng_words add index livestream_id_idx (livestream_id);'"
+	make rsync-app-and-build-and-restart
+
+################################################################################
 # 分析
 ################################################################################
 .PHONY: download-files-for-analysis
