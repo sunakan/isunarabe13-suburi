@@ -134,7 +134,7 @@ switch-ruby: tmp/servers## isupipeの言語をrubyにする(再起動)
 # Kaizen
 ################################################################################
 .PHONY: kaizen
-kaizen: ## Kaizen
+kaizen: ## 続きからやるためのやつ
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestream_tags add index livestream_id_idx (livestream_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table icons add index user_id_idx (user_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table themes add index user_id_idx (user_id);'"
