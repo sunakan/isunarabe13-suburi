@@ -84,6 +84,7 @@ true-interpolate-params: ## InterpolateParams=trueにして、アプリをビル
 
 .PHONY: rsync-app-and-build-and-restart
 rsync-app-and-build-and-restart: tmp/webapp-servers ## アプリをrsyncしてビルド&再起動
+	@make reset-pdns-zone
 	@cat tmp/webapp-servers | xargs -I{} rsync -az -e ssh --exclude=".idea" --exclude=".tool-versions" --exclude=".gitignore" ./rsync-webapp-go/  {}:/home/isucon/webapp/go/
 	@cat tmp/webapp-servers | xargs -I{} ssh {} "mkdir -p /home/isucon/webapp/public/images"
 	@cat tmp/webapp-servers | xargs -I{} ssh {} "export PATH=\$$PATH:/home/isucon/local/golang/bin && cd /home/isucon/webapp/go && make build && sudo systemctl restart isupipe-go"
@@ -105,7 +106,15 @@ rsync-pdns-and-restart: tmp/dns-servers ## PowerDNSのconfigを更新して再�
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/systemd/system/pdns.service.d/isudns.conf {}:/etc/systemd/system/pdns.service.d/isudns.conf
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/opt/init_zone_once.sh {}:/opt/init_zone_once.sh
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl daemon-reload && sudo systemctl restart pdns"
-	@make clean-log
+
+.PHONY: replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS
+replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS: tmp/dns-servers ## ISUCON13_POWERDNS_SUBDOMAIN_ADDRESSを192.168.0.12に置換
+	@cat tmp/dns-servers | xargs -I{} ssh {} "sed -i '/ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS/d' ~/env.sh && echo 'ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS=\"192.168.0.12\"' >> ~/env.sh"
+
+.PHONY: reset-pdns-zone
+reset-pdns-zone: tmp/dns-servers ## PowerDNSのconfigを更新して再起動
+	@cat tmp/dns-servers | xargs -I{} ssh {} "(pdnsutil delete-zone t.isucon.pw || echo 'ゾーンがなかった') && sudo rm -rf /opt/isunarabe-env-ipaddr.sh.lock"
+	@cat tmp/dns-servers | xargs -I{} ssh {} "~/webapp/pdns/init_zone.sh"
 
 ################################################################################
 # 最低限のセットアップ

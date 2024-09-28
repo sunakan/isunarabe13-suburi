@@ -31,6 +31,7 @@ const (
 var (
 	powerDNSSubdomainAddress string
 	dbConn                   *sqlx.DB
+	dnsDbConn                *sqlx.DB
 	secret                   = []byte("isucon13_session_cookiestore_defaultsecret")
 )
 
@@ -208,6 +209,16 @@ func main() {
 		os.Exit(1)
 	}
 	powerDNSSubdomainAddress = subdomainAddr
+
+	// kaizen-05
+	// DNS用DBに接続
+	conn2, err := connectDNSDB("192.168.0.11")
+	if err != nil {
+		e.Logger.Errorf("failed to connect db: %v", err)
+		os.Exit(1)
+	}
+	defer conn2.Close()
+	dnsDbConn = conn2
 
 	// HTTPサーバ起動
 	listenAddr := net.JoinHostPort("", strconv.Itoa(listenPort))

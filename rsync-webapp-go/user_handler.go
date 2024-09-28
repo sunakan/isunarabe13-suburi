@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -265,9 +264,10 @@ func registerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user theme: "+err.Error())
 	}
 
-	if out, err := exec.Command("pdnsutil", "add-record", "t.isucon.pw", req.Name, "A", "0", powerDNSSubdomainAddress).CombinedOutput(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, string(out)+": "+err.Error())
-	}
+	// kaizen-05: DNS用のDBに直接サブドメインを追加
+	//if out, err := exec.Command("pdnsutil", "add-record", "t.isucon.pw", req.Name, "A", "0", powerDNSSubdomainAddress).CombinedOutput(); err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, string(out)+": "+err.Error())
+	//}
 
 	user, err := fillUserResponse(ctx, tx, userModel)
 	if err != nil {
@@ -276,6 +276,11 @@ func registerHandler(c echo.Context) error {
 
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
+
+	// kaizen-05: DNS用のDBに直接サブドメインを追加
+	if err := addSubdomain(req.Name); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add subdomain: "+err.Error())
 	}
 
 	return c.JSON(http.StatusCreated, user)
