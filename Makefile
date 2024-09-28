@@ -108,6 +108,7 @@ setup-pdns: tmp/dns-servers ## PowerDNSのセットアップ
 .PHONY: rsync-pdns-and-restart
 rsync-pdns-and-restart: tmp/dns-servers ## PowerDNSのconfigを更新して再起動
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/systemd/system/pdns.service.d/isudns.conf {}:/etc/systemd/system/pdns.service.d/isudns.conf
+	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/powerdns/pdns.conf {}:/etc/powerdns/pdns.conf
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/opt/init_zone_once.sh {}:/opt/init_zone_once.sh
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl daemon-reload && sudo systemctl restart pdns"
 
@@ -164,6 +165,7 @@ kaizen: ## 続きからやるためのやつ
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table ng_words add index livestream_id_idx (livestream_id);'"
 	make replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS
 	make replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS
+	make rsync-pdns-and-restart
 	make rsync-app-and-build-and-restart
 
 ################################################################################

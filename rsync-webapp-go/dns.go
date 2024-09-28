@@ -47,7 +47,7 @@ func connectDNSDB(dbIpAddress string) (*sqlx.DB, error) {
 // kaizen-05: DNS用のDBに直接サブドメインを追加
 // addSubdomain は、サブドメインをDNS用のDBに追加する
 func addSubdomain(subdomain string) error {
-	if _, err := dnsDbConn.Exec("INSERT INTO records (domain_id, name, type, content, ttl, prio, disabled, ordername, auth) VALUES(?, ?, 'A', '192.168.0.12', 0, 0, 0, NULL, 1)", domainId, strings.ToLower(subdomain)+".t.isucon.pw"); err != nil {
+	if _, err := dnsDbConn.Exec("INSERT INTO records (domain_id, name, type, content, ttl, prio, disabled, ordername, auth) VALUES(?, ?, 'A', '192.168.0.12', 120, 0, 0, NULL, 1)", domainId, strings.ToLower(subdomain)+".t.isucon.pw"); err != nil {
 		fmt.Printf("DNS DB: クエリ失敗: %+v\n", err)
 		return err
 	}
