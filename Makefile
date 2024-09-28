@@ -201,16 +201,10 @@ cloudformation.yml:
 	exit 1
 
 tmp/servers:
-	@echo '~/.ssh/configにisu-1~isu-3, benchの設定を追加してください'
-	@echo '例'
-	@echo 'Host isu-1'
-	@echo 'HostName ${IP_1}'
-	@echo 'User isucon'
-	@echo 'IdentityFile ~/.ssh/id_rsa'
 	@echo 'isu-1' > tmp/servers
 	@echo 'isu-2' >> tmp/servers
 	@echo 'isu-3' >> tmp/servers
-	@echo 'bench' >> tmp/servers
+	@echo 'isu-bench' >> tmp/servers
 
 ################################################################################
 # Utility-Command help
