@@ -163,6 +163,7 @@ kaizen: ## 続きからやるためのやつ
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestreams add index user_id_idx (user_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table reactions add index livestream_id_idx (livestream_id);'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table ng_words add index livestream_id_idx (livestream_id);'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isudns  -e 'alter table records add index name_idx (name);'"
 	make replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS
 	make replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS
 	make rsync-pdns-and-restart
