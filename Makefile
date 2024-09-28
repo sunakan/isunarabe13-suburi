@@ -100,6 +100,13 @@ setup-pdns: tmp/dns-servers ## PowerDNSのセットアップ
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/systemd/system/pdns.service.d/isudns.conf {}:/etc/systemd/system/pdns.service.d/isudns.conf
 	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl daemon-reload && sudo systemctl restart pdns"
 
+.PHONY: rsync-pdns-and-restart
+rsync-pdns-and-restart: tmp/dns-servers ## PowerDNSのconfigを更新して再起動
+	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/etc/systemd/system/pdns.service.d/isudns.conf {}:/etc/systemd/system/pdns.service.d/isudns.conf
+	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" pdns/opt/init_zone_once.sh {}:/opt/init_zone_once.sh
+	@cat tmp/dns-servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl daemon-reload && sudo systemctl restart pdns"
+	@make clean-log
+
 ################################################################################
 # 最低限のセットアップ
 ################################################################################
