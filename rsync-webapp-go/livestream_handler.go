@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -60,8 +59,6 @@ type LivestreamModel2 struct {
 	// livestream_owner_themes
 	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
 	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
-	// livestream_owner_icons
-	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
 	// tags
 	Livestream_Tags string `db:"livestream_tags"`
 }
@@ -251,12 +248,10 @@ select
   , livestream_owners.description as "livestream_owner_description"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
   , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livestreams.id), '[]') as "livestream_tags"
 from livestreams
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
 where livestreams.id in (select livestream_ids.livestream_id from livestream_ids)
 order by livestream_id desc
 ;`
@@ -282,12 +277,10 @@ select
   , livestream_owners.description as "livestream_owner_description"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
   , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livestreams.id), '[]') as "livestream_tags"
 from livestreams
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
 order by livestream_id desc
 `
 		if c.QueryParam("limit") != "" {
@@ -313,10 +306,6 @@ order by livestream_id desc
 		// if err != nil {
 		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
 		// }
-		livestreamOwnerIconHash := fallbackImageHash
-		if len(livestreamModels[i].LivestreamOwnerIcon_Image) > 0 {
-			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livestreamModels[i].LivestreamOwnerIcon_Image))
-		}
 		var tags []Tag
 		err = json.Unmarshal([]byte(livestreamModels[i].Livestream_Tags), &tags)
 		if err != nil {
@@ -333,7 +322,7 @@ order by livestream_id desc
 					ID:       livestreamModels[i].LivestreamOwnerTheme_ID,
 					DarkMode: livestreamModels[i].LivestreamOwnerTheme_DarkMode,
 				},
-				IconHash: livestreamOwnerIconHash,
+				IconHash: getIconHashByUserId(livestreamModels[i].LivestreamOwner_ID),
 			},
 			Title:        livestreamModels[i].Livestream_Title,
 			Description:  livestreamModels[i].Livestream_Description,

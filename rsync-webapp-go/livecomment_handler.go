@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -44,8 +43,6 @@ type LivecommentModel2 struct {
 	// themes
 	Theme_ID       int64 `db:"theme_id"`
 	Theme_DarkMode bool  `db:"theme_dark_mode"`
-	// icons
-	Icon_Image []byte `db:"icon_image"`
 	// livestreams
 	Livestream_ID           int64  `db:"livestream_id"`
 	Livestream_Title        string `db:"livestream_title"`
@@ -62,8 +59,6 @@ type LivecommentModel2 struct {
 	// livestream_owner_themes
 	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
 	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
-	// livestream_owner_icons
-	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
 }
 type Livecomment struct {
 	ID         int64      `json:"id"`
@@ -133,7 +128,6 @@ livecomments.id as "livecomment_id"
   , users.description as "user_description"
   , themes.id as "theme_id"
   , themes.dark_mode as "theme_dark_mode"
-  , icons.image as "icon_image"
   , livestreams.id as "livestream_id"
   , livestreams.title as "livestream_title"
   , livestreams.description as "livestream_description"
@@ -147,15 +141,12 @@ livecomments.id as "livecomment_id"
   , livestream_owners.description as "livestream_owner_description"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
 from livecomments
 inner join users on users.id = livecomments.user_id
 inner join themes on themes.user_id = users.id
-left join icons on icons.user_id = users.id
 inner join livestreams on livestreams.id = livecomments.livestream_id
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
 where livecomments.livestream_id = ?
 order by livecomments.created_at desc
 `
@@ -193,14 +184,6 @@ order by livecomments.created_at desc
 		// if err != nil {
 		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
 		// }
-		iconHash := fallbackImageHash
-		livestreamOwnerIconHash := fallbackImageHash
-		if len(livecommentModels[i].Icon_Image) > 0 {
-			iconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModels[i].Icon_Image))
-		}
-		if len(livecommentModels[i].LivestreamOwnerIcon_Image) > 0 {
-			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModels[i].LivestreamOwnerIcon_Image))
-		}
 		livecomments[i] = Livecomment{
 			ID: livecommentModels[i].Livecomment_ID,
 			User: User{
@@ -212,7 +195,7 @@ order by livecomments.created_at desc
 					ID:       livecommentModels[i].Theme_ID,
 					DarkMode: livecommentModels[i].Theme_DarkMode,
 				},
-				IconHash: iconHash,
+				IconHash: getIconHashByUserId(livecommentModels[i].User_ID),
 			},
 			Livestream: Livestream{
 				ID: livecommentModels[i].Livestream_ID,
@@ -225,7 +208,7 @@ order by livecomments.created_at desc
 						ID:       livecommentModels[i].LivestreamOwnerTheme_ID,
 						DarkMode: livecommentModels[i].LivestreamOwnerTheme_DarkMode,
 					},
-					IconHash: livestreamOwnerIconHash,
+					IconHash: getIconHashByUserId(livecommentModels[i].LivestreamOwner_ID),
 				},
 				Title:        livecommentModels[i].Livestream_Title,
 				Description:  livecommentModels[i].Livestream_Description,
@@ -635,7 +618,6 @@ select
   , users.description as "user_description"
   , themes.id as "theme_id"
   , themes.dark_mode as "theme_dark_mode"
-  , icons.image as "icon_image"
   , livestreams.id as "livestream_id"
   , livestreams.title as "livestream_title"
   , livestreams.description as "livestream_description"
@@ -649,15 +631,12 @@ select
   , livestream_owners.description as "livestream_owner_description"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
 from livecomments
 inner join users on users.id = livecomments.user_id
 inner join themes on themes.user_id = users.id
-left join icons on icons.user_id = users.id
 inner join livestreams on livestreams.id = livecomments.livestream_id
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
 where livecomments.id = ?
 `
 	var livecommentModel LivecommentModel2
@@ -665,14 +644,6 @@ where livecomments.id = ?
 		return Livecomment{}, err
 	}
 	var livecomment Livecomment
-	iconHash := fallbackImageHash
-	livestreamOwnerIconHash := fallbackImageHash
-	if len(livecommentModel.Icon_Image) > 0 {
-		iconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModel.Icon_Image))
-	}
-	if len(livecommentModel.LivestreamOwnerIcon_Image) > 0 {
-		livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModel.LivestreamOwnerIcon_Image))
-	}
 	tags, err := getLivestreamTags(ctx, tx, int(livecommentModel.Livestream_ID))
 	if err != nil {
 		return Livecomment{}, err
@@ -688,7 +659,7 @@ where livecomments.id = ?
 				ID:       livecommentModel.Theme_ID,
 				DarkMode: livecommentModel.Theme_DarkMode,
 			},
-			IconHash: iconHash,
+			IconHash: getIconHashByUserId(livecommentModel.User_ID),
 		},
 		Livestream: Livestream{
 			ID: livecommentModel.Livestream_ID,
@@ -701,7 +672,7 @@ where livecomments.id = ?
 					ID:       livecommentModel.LivestreamOwnerTheme_ID,
 					DarkMode: livecommentModel.LivestreamOwnerTheme_DarkMode,
 				},
-				IconHash: livestreamOwnerIconHash,
+				IconHash: getIconHashByUserId(livecommentModel.LivestreamOwner_ID),
 			},
 			Title:        livecommentModel.Livestream_Title,
 			Description:  livecommentModel.Livestream_Description,

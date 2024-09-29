@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,7 @@ const (
 
 var fallbackImage = "../img/NoImage.jpg"
 var fallbackImageHash string
+var iconHashCache = sync.Map{}
 
 type UserModel struct {
 	ID             int64  `db:"id"`
@@ -38,6 +40,17 @@ type UserModel struct {
 	DisplayName    string `db:"display_name"`
 	Description    string `db:"description"`
 	HashedPassword string `db:"password"`
+}
+
+type UserModel2 struct {
+	// users
+	ID          int64  `db:"user_id"`
+	Name        string `db:"user_name"`
+	DisplayName string `db:"user_display_name"`
+	Description string `db:"user_description"`
+	// themes
+	ThemeID       int64 `db:"theme_id"`
+	ThemeDarkMode bool  `db:"theme_dark_mode"`
 }
 
 type User struct {
@@ -125,7 +138,9 @@ func getIconHandler(c echo.Context) error {
 }
 
 func postIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
+	// kaizen-07: 画像は書き出す(Nginxで返している)。ハッシュ値を計算してインメモリキャッシュ
+	// ctxを使わなくなった
+	// ctx := c.Request().Context()
 
 	if err := verifyUserSession(c); err != nil {
 		// echo.NewHTTPErrorが返っているのでそのまま出力
@@ -142,32 +157,41 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
+	// kaizen-07: 画像は書き出す(Nginxで返している)。ハッシュ値を計算してインメモリキャッシュ
+	//tx, err := dbConn.BeginTxx(ctx, nil)
+	//if err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
+	//}
+	//defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
-	}
+	//if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
+	//}
+	//rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
+	//if err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
+	//}
+	//iconID, err := rs.LastInsertId()
+	//if err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
+	//}
+	//if err := tx.Commit(); err != nil {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	//}
 
-	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
-	}
-
-	iconID, err := rs.LastInsertId()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	storeIconHash(userID, fmt.Sprintf("%x", sha256.Sum256(req.Image)))
+	// 画像をファイルに保存
+	// エラーが発生しても処理を続行し、ログに記録
+	userName := sess.Values[defaultUsernameKey].(string)
+	imagePath := filepath.Join("/home/isucon/webapp/public/images", userName+".jpeg")
+	if err := os.WriteFile(imagePath, req.Image, 0644); err != nil {
+		log.Printf("Failed to save image for user %s: %v", userName, err)
 	}
 
 	return c.JSON(http.StatusCreated, &PostIconResponse{
-		ID: iconID,
+		// ダミーな数字を返す
+		//ID: iconID,
+		ID: userID,
 	})
 }
 
@@ -184,14 +208,27 @@ func getMeHandler(c echo.Context) error {
 	// existence already checked
 	userID := sess.Values[defaultUserIDKey].(int64)
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
+	// kaizen-07: IconHashはインメモリキャッシュ
+	// tx, err := dbConn.BeginTxx(ctx, nil)
+	// if err != nil {
+	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
+	// }
+	// defer tx.Rollback()
 
-	userModel := UserModel{}
-	err = tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID)
+	query := `
+select
+  users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+from users
+inner join themes on themes.user_id = users.id
+where users.id = ?
+`
+	userModel := UserModel2{}
+	err := dbConn.GetContext(ctx, &userModel, query, userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found user that has the userid in session")
 	}
@@ -199,13 +236,26 @@ func getMeHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
-	user, err := fillUserResponse(ctx, tx, userModel)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
-	}
+	// kaizen-07: IconHashはインメモリキャッシュ
+	// user, err := fillUserResponse(ctx, tx, userModel)
+	// if err != nil {
+	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
+	// }
 
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	// if err := tx.Commit(); err != nil {
+	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	// }
+
+	user := User{
+		ID:          userModel.ID,
+		Name:        userModel.Name,
+		Description: userModel.Description,
+		DisplayName: userModel.DisplayName,
+		Theme: Theme{
+			ID:       userModel.ThemeID,
+			DarkMode: userModel.ThemeDarkMode,
+		},
+		IconHash: getIconHashByUserId(userModel.ID),
 	}
 
 	return c.JSON(http.StatusOK, user)
@@ -418,17 +468,19 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 		return User{}, err
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return User{}, err
-		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
-		}
-	}
-	iconHash := sha256.Sum256(image)
+	// kaizen-07: IconHashはインメモリキャッシュ
+	//var image []byte
+	//if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
+	//	if !errors.Is(err, sql.ErrNoRows) {
+	//		return User{}, err
+	//	}
+	//	image, err = os.ReadFile(fallbackImage)
+	//	if err != nil {
+	//		return User{}, err
+	//	}
+	//}
+	//iconHash := sha256.Sum256(image)
+	iconHash := getIconHashByUserId(userModel.ID)
 
 	user := User{
 		ID:          userModel.ID,
@@ -439,8 +491,19 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: iconHash,
 	}
 
 	return user, nil
+}
+
+func getIconHashByUserId(userID int64) string {
+	if iconHash, ok := iconHashCache.Load(userID); ok {
+		return iconHash.(string)
+	}
+	return fallbackImageHash
+}
+
+func storeIconHash(userID int64, iconHash string) {
+	iconHashCache.Store(userID, iconHash)
 }
