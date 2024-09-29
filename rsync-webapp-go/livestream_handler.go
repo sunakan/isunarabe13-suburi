@@ -384,36 +384,63 @@ func getUserLivestreamsHandler(c echo.Context) error {
 
 	username := c.Param("username")
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	query := `
+select
+  livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+from livestreams
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+where livestream_owners.name = ?
+`
+	livestreamModels := []LivestreamModel2{}
+	err := dbConn.SelectContext(ctx, &livestreamModels, query, username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "not found livestream that has the given id")
+	}
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	var user UserModel
-	if err := tx.GetContext(ctx, &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user not found")
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
-		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
 	}
 
-	var livestreamModels []*LivestreamModel
-	if err := tx.SelectContext(ctx, &livestreamModels, "SELECT * FROM livestreams WHERE user_id = ?", user.ID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
-	}
 	livestreams := make([]Livestream, len(livestreamModels))
-	for i := range livestreamModels {
-		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
+	for i, livestreamModel := range livestreamModels {
+		tags, err := getLivestreamTags2(ctx, livestreamModel.Livestream_ID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
+		}
+		livestream := Livestream{
+			ID: livestreamModel.Livestream_ID,
+			Owner: User{
+				ID:          livestreamModel.LivestreamOwner_ID,
+				Name:        livestreamModel.LivestreamOwner_Name,
+				DisplayName: livestreamModel.LivestreamOwner_DisplayName,
+				Description: livestreamModel.LivestreamOwner_Description,
+				Theme: Theme{
+					ID:       livestreamModel.LivestreamOwnerTheme_ID,
+					DarkMode: livestreamModel.LivestreamOwnerTheme_DarkMode,
+				},
+				IconHash: getIconHashByUserId(livestreamModel.LivestreamOwner_ID),
+			},
+			Title:        livestreamModel.Livestream_Title,
+			Description:  livestreamModel.Livestream_Description,
+			PlaylistUrl:  livestreamModel.Livestream_PlaylistUrl,
+			ThumbnailUrl: livestreamModel.Livestream_ThumbnailUrl,
+			Tags:         tags,
+			StartAt:      livestreamModel.Livestream_StartAt,
+			EndAt:        livestreamModel.Livestream_EndAt,
 		}
 		livestreams[i] = livestream
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, livestreams)
