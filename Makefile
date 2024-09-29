@@ -188,11 +188,11 @@ alp-each: ## alpでnginxのログを分析(brew install alp)
 
 .PHONY: pt-query-digest
 pt-query-digest: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
-	pt-query-digest --limit 10 tmp/analysis/latest/mysql-slow.log.*
+	pt-query-digest --limit 5 tmp/analysis/latest/mysql-slow.log.*
 
 .PHONY: pt-query-digest-each
 pt-query-digest-each: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
-	cat tmp/db-servers | xargs -I{} bash -c 'pt-query-digest --limit 10 tmp/analysis/latest/mysql-slow.log.{} > tmp/pt-query-digest.{}'
+	cat tmp/db-servers | xargs -I{} bash -c 'pt-query-digest --limit 5 tmp/analysis/latest/mysql-slow.log.{} > tmp/pt-query-digest.{}'
 
 .PHONY: clean-log
 clean-log: ## MySQL, Nginxのログをリセットする
