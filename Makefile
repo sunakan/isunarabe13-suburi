@@ -179,11 +179,11 @@ download-files-for-analysis: tmp/servers ## 分析用のファイルをダウン
 
 .PHONY: alp
 alp: ## alpでnginxのログを分析(brew install alp)
-	alp json --sort sum -r -o count,method,uri,min,avg,max,sum --file tmp/analysis/latest/nginx-access.log.* -m '/api/user/\w+/statistics,/api/user/\w+/icon,/api/user/\w+/theme,/api/livestream/\d+/livecomment,/api/livestream/\d+/reaction,/api/livestream/\d+/moderate,/api/livestream/\d+/report,/api/livestream/\d+/ngwords,/api/livestream/\d+/exit,/api/livestream/\d+/enter,/api/livestream/\d+/statistics,/api/livestream/\d+'
+	alp json --sort sum -r -o count,method,uri,min,avg,max,sum --file tmp/analysis/latest/nginx-access.log.* -m '/api/user/\w+/livestream,/api/user/\w+/statistics,/api/user/\w+/icon,/api/user/\w+/theme,/api/livestream/\d+/livecomment,/api/livestream/\d+/reaction,/api/livestream/\d+/moderate,/api/livestream/\d+/report,/api/livestream/\d+/ngwords,/api/livestream/\d+/exit,/api/livestream/\d+/enter,/api/livestream/\d+/statistics,/api/livestream/\d+'
 
 .PHONY: alp-each
 alp-each: ## alpでnginxのログを分析(brew install alp)
-	cat tmp/nginx-servers | xargs -I{} alp json --sort sum -r -o count,method,uri,min,avg,max,sum --file tmp/analysis/latest/nginx-access.log.{} -m '/api/user/\w+/statistics,/api/user/\w+/icon,/api/user/\w+/theme,/api/livestream/\d+/livecomment,/api/livestream/\d+/reaction,/api/livestream/\d+/moderate,/api/livestream/\d+/report,/api/livestream/\d+/ngwords,/api/livestream/\d+/exit,/api/livestream/\d+/enter,/api/livestream/\d+/statistics,/api/livestream/\d+'
+	cat tmp/nginx-servers | xargs -I{} alp json --sort sum -r -o count,method,uri,min,avg,max,sum --file tmp/analysis/latest/nginx-access.log.{} -m '/api/user/\w+/livestream,/api/user/\w+/statistics,/api/user/\w+/icon,/api/user/\w+/theme,/api/livestream/\d+/livecomment,/api/livestream/\d+/reaction,/api/livestream/\d+/moderate,/api/livestream/\d+/report,/api/livestream/\d+/ngwords,/api/livestream/\d+/exit,/api/livestream/\d+/enter,/api/livestream/\d+/statistics,/api/livestream/\d+'
 
 
 .PHONY: pt-query-digest
