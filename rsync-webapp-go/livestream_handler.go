@@ -81,6 +81,11 @@ type LivestreamTagModel struct {
 	TagID        int64 `db:"tag_id" json:"tag_id"`
 }
 
+type LivestreamTagModel2 struct {
+	LivestreamID int64 `db:"livestream_id"`
+	TagID        int64 `db:"tag_id"`
+}
+
 type ReservationSlotModel struct {
 	ID      int64 `db:"id" json:"id"`
 	Slot    int64 `db:"slot" json:"slot"`
@@ -163,24 +168,77 @@ func reserveLivestreamHandler(c echo.Context) error {
 	livestreamModel.ID = livestreamID
 
 	// タグ追加
-	for _, tagID := range req.Tags {
-		if _, err := tx.NamedExecContext(ctx, "INSERT INTO livestream_tags (livestream_id, tag_id) VALUES (:livestream_id, :tag_id)", &LivestreamTagModel{
+	ptrTags := make([]*Tag, len(req.Tags))
+	tags := make([]Tag, len(req.Tags))
+	insertTags := make([]LivestreamTagModel2, len(req.Tags))
+	for i, tagID := range req.Tags {
+		ptrTags[i] = getPtrTagByID(tagID)
+		tags[i] = *(ptrTags[i])
+		insertTags[i] = LivestreamTagModel2{
 			LivestreamID: livestreamID,
 			TagID:        tagID,
-		}); err != nil {
+		}
+	}
+	if 0 < len(insertTags) {
+		if _, err := tx.NamedExecContext(ctx, "INSERT INTO livestream_tags (livestream_id, tag_id) VALUES (:livestream_id, :tag_id)", insertTags); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag: "+err.Error())
 		}
 	}
-
-	livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModel)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
-	}
-
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
+	livestreamTags.Set(strconv.FormatInt(livestreamID, 10), ptrTags)
 
+	query := `
+select
+  livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+from livestreams
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+where livestreams.id = ?
+`
+	livestreamModel2 := LivestreamModel2{}
+	err = dbConn.GetContext(ctx, &livestreamModel2, query, livestreamID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "not found livestream that has the given id")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
+	}
+
+	livestream := Livestream{
+		ID: livestreamModel2.Livestream_ID,
+		Owner: User{
+			ID:          livestreamModel2.LivestreamOwner_ID,
+			Name:        livestreamModel2.LivestreamOwner_Name,
+			DisplayName: livestreamModel2.LivestreamOwner_DisplayName,
+			Description: livestreamModel2.LivestreamOwner_Description,
+			Theme: Theme{
+				ID:       livestreamModel2.LivestreamOwnerTheme_ID,
+				DarkMode: livestreamModel2.LivestreamOwnerTheme_DarkMode,
+			},
+			IconHash: getIconHashByUserId(livestreamModel2.LivestreamOwner_ID),
+		},
+		Title:        livestreamModel2.Livestream_Title,
+		Description:  livestreamModel2.Livestream_Description,
+		PlaylistUrl:  livestreamModel2.Livestream_PlaylistUrl,
+		ThumbnailUrl: livestreamModel2.Livestream_ThumbnailUrl,
+		Tags:         tags,
+		StartAt:      livestreamModel2.Livestream_StartAt,
+		EndAt:        livestreamModel2.Livestream_EndAt,
+	}
 	return c.JSON(http.StatusCreated, livestream)
 }
 
