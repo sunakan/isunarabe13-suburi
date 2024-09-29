@@ -164,6 +164,7 @@ kaizen: ## 続きからやるためのやつ
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table livestreams add index user_id_idx (user_id);' || echo 'すでにある'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table reactions add index livestream_id_idx (livestream_id);' || echo 'すでにある'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table ng_words add index livestream_id_idx (livestream_id);' || echo 'すでにある'"
+	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isupipe -e 'alter table reservation_slots add index start_at_end_at_index (start_at, end_at);' || echo 'すでにある'"
 	cat tmp/db-servers | xargs -I{} ssh {} "sudo mysql isudns  -e 'alter table records add index name_idx (name);' || echo 'すでにある'"
 	make replace-ISUCON13_POWERDNS_SUBDOMAIN_ADDRESS
 	make replace-ISUCON13_MYSQL_DIALCONFIG_ADDRESS
@@ -188,11 +189,11 @@ alp-each: ## alpでnginxのログを分析(brew install alp)
 
 .PHONY: pt-query-digest
 pt-query-digest: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
-	pt-query-digest --limit 5 tmp/analysis/latest/mysql-slow.log.*
+	pt-query-digest --limit 10 tmp/analysis/latest/mysql-slow.log.*
 
 .PHONY: pt-query-digest-each
 pt-query-digest-each: ## pt-query-digestでスロークエリを分析(brew install percona-toolkit)
-	cat tmp/db-servers | xargs -I{} bash -c 'pt-query-digest --limit 5 tmp/analysis/latest/mysql-slow.log.{} > tmp/pt-query-digest.{}'
+	cat tmp/db-servers | xargs -I{} bash -c 'pt-query-digest --limit 10 tmp/analysis/latest/mysql-slow.log.{} > tmp/pt-query-digest.{}'
 
 .PHONY: clean-log
 clean-log: ## MySQL, Nginxのログをリセットする
