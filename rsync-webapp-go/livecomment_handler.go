@@ -84,6 +84,50 @@ type LivecommentReportModel struct {
 	CreatedAt     int64 `db:"created_at"`
 }
 
+type LivecommentReportModel2 struct {
+	// reports
+	LivecommentReport_ID        int64 `db:"livecomment_report_id"`
+	LivecommentReport_CreatedAt int64 `db:"livecomment_report_created_at"`
+	// users(reporter)
+	User_ID          int64  `db:"user_id"`
+	User_Name        string `db:"user_name"`
+	User_DisplayName string `db:"user_display_name"`
+	User_Description string `db:"user_description"`
+	// themes
+	Theme_ID       int64 `db:"theme_id"`
+	Theme_DarkMode bool  `db:"theme_dark_mode"`
+
+	// livecomments
+	Livecomment_ID        int64  `db:"livecomment_id"`
+	Livecomment_Comment   string `db:"livecomment_comment"`
+	Livecomment_Tip       int64  `db:"livecomment_tip"`
+	Livecomment_CreatedAt int64  `db:"livecomment_created_at"`
+	// users(commenter)
+	Commenter_ID          int64  `db:"commenter_id"`
+	Commenter_Name        string `db:"commenter_name"`
+	Commenter_DisplayName string `db:"commenter_display_name"`
+	Commenter_Description string `db:"commenter_description"`
+	// themes(commenter)
+	CommenterTheme_ID       int64 `db:"commenter_theme_id"`
+	CommenterTheme_DarkMode bool  `db:"commenter_theme_dark_mode"`
+	// livestreams
+	Livestream_ID           int64  `db:"livestream_id"`
+	Livestream_Title        string `db:"livestream_title"`
+	Livestream_Description  string `db:"livestream_description"`
+	Livestream_PlaylistUrl  string `db:"livestream_playlist_url"`
+	Livestream_ThumbnailUrl string `db:"livestream_thumbnail_url"`
+	Livestream_StartAt      int64  `db:"livestream_start_at"`
+	Livestream_EndAt        int64  `db:"livestream_end_at"`
+	// livestream_owners
+	LivestreamOwner_ID          int64  `db:"livestream_owner_id"`
+	LivestreamOwner_Name        string `db:"livestream_owner_name"`
+	LivestreamOwner_DisplayName string `db:"livestream_owner_display_name"`
+	LivestreamOwner_Description string `db:"livestream_owner_description"`
+	// livestream_owner_themes
+	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
+	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
+}
+
 type ModerateRequest struct {
 	NGWord string `json:"ng_word"`
 }
@@ -436,13 +480,115 @@ func reportLivecommentHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted livecomment report id: "+err.Error())
 	}
 	reportModel.ID = reportID
-
-	report, err := fillLivecommentReportResponse(ctx, tx, reportModel)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livecomment report: "+err.Error())
-	}
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
+
+	query := `
+select
+  livecomment_reports.id as "livecomment_report_id"
+  , livecomment_reports.created_at as "livecomment_report_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , livecomments.id as "livecomment_id"
+  , livecomments.comment as "livecomment_comment"
+  , livecomments.tip as "livecomment_tip"
+  , livecomments.created_at as "livecomment_created_at"
+  , commenters.id as "commenter_id"
+  , commenters.name as "commenter_name"
+  , commenters.display_name as "commenter_display_name"
+  , commenters.description as "commenter_description"
+  , commenter_themes.id as "commenter_theme_id"
+  , commenter_themes.dark_mode as "commenter_theme_dark_mode"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+from livecomment_reports
+inner join users on users.id = livecomment_reports.user_id
+inner join themes on themes.user_id = users.id
+inner join livecomments on livecomment_reports.livecomment_id = livecomments.id
+inner join users as commenters on commenters.id = livecomments.user_id
+inner join themes as commenter_themes on commenter_themes.user_id = commenters.id
+inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+where livecomment_reports.id = ?
+`
+	livecommentReportModel2 := LivecommentReportModel2{}
+	if err := dbConn.GetContext(ctx, &livecommentReportModel2, query, reportID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomment report: "+err.Error())
+	}
+
+	tags, err := getLivestreamTags2(ctx, livecommentReportModel2.Livestream_ID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
+	}
+	report := LivecommentReport{
+		ID: reportID,
+		Reporter: User{
+			ID:          livecommentReportModel2.User_ID,
+			Name:        livecommentReportModel2.User_Name,
+			DisplayName: livecommentReportModel2.User_DisplayName,
+			Description: livecommentReportModel2.User_Description,
+			Theme: Theme{
+				ID:       livecommentReportModel2.Theme_ID,
+				DarkMode: livecommentReportModel2.Theme_DarkMode,
+			},
+			IconHash: getIconHashByUserId(livecommentReportModel2.User_ID),
+		},
+		Livecomment: Livecomment{
+			ID: livecommentReportModel2.Livecomment_ID,
+			User: User{
+				ID:          livecommentReportModel2.Commenter_ID,
+				Name:        livecommentReportModel2.Commenter_Name,
+				DisplayName: livecommentReportModel2.Commenter_DisplayName,
+				Description: livecommentReportModel2.Commenter_Description,
+				Theme: Theme{
+					ID:       livecommentReportModel2.CommenterTheme_ID,
+					DarkMode: livecommentReportModel2.CommenterTheme_DarkMode,
+				},
+				IconHash: getIconHashByUserId(livecommentReportModel2.Commenter_ID),
+			},
+			Livestream: Livestream{
+				ID:           livecommentReportModel2.Livestream_ID,
+				Title:        livecommentReportModel2.Livestream_Title,
+				Description:  livecommentReportModel2.Livestream_Description,
+				PlaylistUrl:  livecommentReportModel2.Livestream_PlaylistUrl,
+				ThumbnailUrl: livecommentReportModel2.Livestream_ThumbnailUrl,
+				Tags:         tags,
+				StartAt:      livecommentReportModel2.Livestream_StartAt,
+				EndAt:        livecommentReportModel2.Livestream_EndAt,
+				Owner: User{
+					ID:          livecommentReportModel2.LivestreamOwner_ID,
+					Name:        livecommentReportModel2.LivestreamOwner_Name,
+					DisplayName: livecommentReportModel2.LivestreamOwner_DisplayName,
+					Description: livecommentReportModel2.LivestreamOwner_Description,
+					Theme: Theme{
+						ID:       livecommentReportModel2.LivestreamOwnerTheme_ID,
+						DarkMode: livecommentReportModel2.LivestreamOwnerTheme_DarkMode,
+					},
+					IconHash: getIconHashByUserId(livecommentReportModel2.LivestreamOwner_ID),
+				},
+			},
+			Comment:   livecommentReportModel2.Livecomment_Comment,
+			Tip:       livecommentReportModel2.Livecomment_Tip,
+			CreatedAt: livecommentReportModel2.Livecomment_CreatedAt,
+		},
+		CreatedAt: livecommentReportModel2.LivecommentReport_CreatedAt,
 	}
 
 	return c.JSON(http.StatusCreated, report)
