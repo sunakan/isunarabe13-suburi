@@ -17,22 +17,6 @@ type LivestreamStatistics struct {
 	MaxTip         int64 `json:"max_tip" db:"max_tip"`
 }
 
-type LivestreamRankingEntry struct {
-	LivestreamID int64
-	Score        int64
-}
-type LivestreamRanking []LivestreamRankingEntry
-
-func (r LivestreamRanking) Len() int      { return len(r) }
-func (r LivestreamRanking) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r LivestreamRanking) Less(i, j int) bool {
-	if r[i].Score == r[j].Score {
-		return r[i].LivestreamID < r[j].LivestreamID
-	} else {
-		return r[i].Score < r[j].Score
-	}
-}
-
 type UserStatistics struct {
 	Rank              int64  `json:"rank" db:"rank"`
 	ViewersCount      int64  `json:"viewers_count" db:"viewers_count"`
@@ -40,22 +24,6 @@ type UserStatistics struct {
 	TotalLivecomments int64  `json:"total_livecomments" db:"total_livecomments"`
 	TotalTip          int64  `json:"total_tip" db:"total_tip"`
 	FavoriteEmoji     string `json:"favorite_emoji" db:"favorite_emoji"`
-}
-
-type UserRankingEntry struct {
-	Username string
-	Score    int64
-}
-type UserRanking []UserRankingEntry
-
-func (r UserRanking) Len() int      { return len(r) }
-func (r UserRanking) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r UserRanking) Less(i, j int) bool {
-	if r[i].Score == r[j].Score {
-		return r[i].Username < r[j].Username
-	} else {
-		return r[i].Score < r[j].Score
-	}
 }
 
 func getUserStatisticsHandler(c echo.Context) error {
