@@ -80,3 +80,16 @@ func getLivestreamTags(ctx context.Context, tx *sqlx.Tx, streamID int) ([]Tag, e
 		return tags, nil
 	}
 }
+func getLivestreamTags2(ctx context.Context, streamID int64) ([]Tag, error) {
+	if tags, ok := livestreamTags.Load(streamID); ok {
+		return tags.([]Tag), nil
+	} else {
+		tags := []Tag{}
+		query := `select tags.* from tags inner join livestream_tags on tags.id = livestream_tags.tag_id where livestream_tags.livestream_id = ?;`
+		if err := dbConn.SelectContext(ctx, &tags, query, streamID); err != nil {
+			return nil, err
+		}
+		livestreamTags.Store(streamID, tags)
+		return tags, nil
+	}
+}
