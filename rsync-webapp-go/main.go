@@ -4,7 +4,6 @@ package main
 // sqlx的な参考: https://jmoiron.github.io/sqlx/
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -42,11 +41,9 @@ func init() {
 	}
 
 	// kaizen-01: fallbackImageHashを事前に計算
-	img, err := os.ReadFile(fallbackImage)
-	if err != nil {
-		fmt.Printf("failed to read fallback image: %v", err)
-	}
-	fallbackImageHash = fmt.Sprintf("%x", sha256.Sum256(img))
+	// sha256sum webapp/img/NoImage.jpg
+	//d9f8294e9d895f81ce62e73dc7d5dff862a4fa40bd4e0fecf53f7526a8edcac0  webapp/img/NoImage.jpg
+	fallbackImageHash = "d9f8294e9d895f81ce62e73dc7d5dff862a4fa40bd4e0fecf53f7526a8edcac0"
 }
 
 type InitializeResponse struct {
