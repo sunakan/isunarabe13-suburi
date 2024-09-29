@@ -172,7 +172,7 @@ order by livecomments.created_at desc
 	// kaizen-01: tagsのUnmarshalは1回だけにして、使い回す
 	var tags []Tag
 	if len(livecommentModels) > 0 {
-		if tags, err = getLivestreamTags(ctx, tx, livestreamID); err != nil {
+		if tags, err = getLivestreamTags(ctx, tx, int64(livestreamID)); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
 		}
 	}
@@ -644,7 +644,7 @@ where livecomments.id = ?
 		return Livecomment{}, err
 	}
 	var livecomment Livecomment
-	tags, err := getLivestreamTags(ctx, tx, int(livecommentModel.Livestream_ID))
+	tags, err := getLivestreamTags(ctx, tx, livecommentModel.Livestream_ID)
 	if err != nil {
 		return Livecomment{}, err
 	}

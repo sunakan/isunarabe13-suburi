@@ -67,7 +67,7 @@ func getTagByName(name string) *Tag {
 	return newTag
 }
 
-func getLivestreamTags(ctx context.Context, tx *sqlx.Tx, streamID int) ([]Tag, error) {
+func getLivestreamTags(ctx context.Context, tx *sqlx.Tx, streamID int64) ([]Tag, error) {
 	if tags, ok := livestreamTags.Load(streamID); ok {
 		return tags.([]Tag), nil
 	} else {
