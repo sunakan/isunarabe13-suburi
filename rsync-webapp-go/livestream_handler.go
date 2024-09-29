@@ -328,15 +328,10 @@ order by livestream_id desc
 
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i := range livestreamModels {
-		// kaizen-04: 1発で取得
-		// livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
-		// if err != nil {
-		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
-		// }
 		var tags []Tag
-		err = json.Unmarshal([]byte(livestreamModels[i].Livestream_Tags), &tags)
+		tags, err := getLivestreamTags2(ctx, livestreamModels[i].Livestream_ID)
 		if err != nil {
-			fmt.Println("JSONのデコードエラー:", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
 		}
 		livestream := Livestream{
 			ID: livestreamModels[i].Livestream_ID,

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,8 +35,6 @@ type ReactionModel2 struct {
 	// themes
 	Theme_ID       int64 `db:"theme_id"`
 	Theme_DarkMode bool  `db:"theme_dark_mode"`
-	// icons
-	Icon_Image []byte `db:"icon_image"`
 	// livestreams
 	Livestream_ID           int64  `db:"livestream_id"`
 	Livestream_Title        string `db:"livestream_title"`
@@ -54,10 +51,6 @@ type ReactionModel2 struct {
 	// livestream_owner_themes
 	LivestreamOwnerTheme_ID       int64 `db:"livestream_owner_theme_id"`
 	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
-	// livestream_owner_icons
-	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
-	// tags
-	Livestream_Tags string `db:"livestream_tags"`
 }
 
 type Reaction struct {
@@ -85,12 +78,6 @@ func getReactionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "livestream_id in path must be integer")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	// kaizen-02: 1発で取得(N+1を解決する)
 	// query := "SELECT * FROM reactions WHERE livestream_id = ? ORDER BY created_at DESC"
 	query := `
@@ -104,7 +91,6 @@ select
   , users.description as "user_description"
   , themes.id as "theme_id"
   , themes.dark_mode as "theme_dark_mode"
-  , icons.image as "icon_image"
   , livestreams.id as "livestream_id"
   , livestreams.title as "livestream_title"
   , livestreams.description as "livestream_description"
@@ -118,16 +104,12 @@ select
   , livestream_owners.description as "livestream_owner_description"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
-  , livestream_owner_icons.image as "livestream_owner_icon_image"
-  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = reactions.livestream_id), '[]') as "livestream_tags"
 from reactions
 inner join users on users.id = reactions.user_id
 inner join themes on themes.user_id = users.id
-left join icons on icons.user_id = users.id
 inner join livestreams on livestreams.id = reactions.livestream_id
 inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
 inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
-left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
 where reactions.livestream_id = ?
 order by created_at desc
 `
@@ -142,34 +124,21 @@ order by created_at desc
 	// kaizen-02: 1発で取得(N+1を解決する)
 	//reactionModels := []ReactionModel{}
 	reactionModels := []ReactionModel2{}
-	if err := tx.SelectContext(ctx, &reactionModels, query, livestreamID); err != nil {
+	if err := dbConn.SelectContext(ctx, &reactionModels, query, livestreamID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
 	// kaizen-02: tagsのUnmarshalは1回だけにして、使い回す
 	var tags []Tag
 	if len(reactionModels) > 0 {
-		err = json.Unmarshal([]byte(reactionModels[0].Livestream_Tags), &tags)
+		tags, err = getLivestreamTags2(ctx, reactionModels[0].Livestream_ID)
 		if err != nil {
-			fmt.Println("JSONのデコードエラー:", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 		}
 	}
 
 	reactions := make([]Reaction, len(reactionModels))
 	for i := range reactionModels {
-		// kaizen-02: 1発で取得(N+1を解決する)
-		// reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
-		// if err != nil {
-		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
-		// }
-		iconHash := fallbackImageHash
-		livestreamOwnerIconHash := fallbackImageHash
-		if len(reactionModels[i].Icon_Image) > 0 {
-			iconHash = fmt.Sprintf("%x", sha256.Sum256(reactionModels[i].Icon_Image))
-		}
-		if len(reactionModels[i].LivestreamOwnerIcon_Image) > 0 {
-			livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(reactionModels[i].LivestreamOwnerIcon_Image))
-		}
 		reactions[i] = Reaction{
 			ID:        reactionModels[i].Reaction_ID,
 			EmojiName: reactionModels[i].Reaction_EmojiName,
@@ -182,7 +151,7 @@ order by created_at desc
 					ID:       reactionModels[i].Theme_ID,
 					DarkMode: reactionModels[i].Theme_DarkMode,
 				},
-				IconHash: iconHash,
+				IconHash: getIconHashByUserId(reactionModels[i].User_ID),
 			},
 			Livestream: Livestream{
 				ID: reactionModels[i].Livestream_ID,
@@ -195,7 +164,7 @@ order by created_at desc
 						ID:       reactionModels[i].LivestreamOwnerTheme_ID,
 						DarkMode: reactionModels[i].LivestreamOwnerTheme_DarkMode,
 					},
-					IconHash: livestreamOwnerIconHash,
+					IconHash: getIconHashByUserId(reactionModels[i].LivestreamOwner_ID),
 				},
 				Title:        reactionModels[i].Livestream_Title,
 				Description:  reactionModels[i].Livestream_Description,
@@ -207,10 +176,6 @@ order by created_at desc
 			},
 			CreatedAt: reactionModels[i].Reaction_CreatedAt,
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, reactions)
