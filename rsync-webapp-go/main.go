@@ -121,6 +121,16 @@ func initializeHandler(c echo.Context) error {
 		c.Logger().Warnf("init.sh failed with err=%s", string(out))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
 	}
+
+	// kaizen: 再起動に備えて、画像の書き出し先やキャッシュクリアをinitializerに仕込む
+	if err := os.MkdirAll("/home/isucon/webapp/public/images", 0755); err != nil {
+		c.Logger().Warnf("画像用ディレクトリ作成失敗 with err=%s", err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
+	}
+	if out, err := exec.Command("rm", "-rf", "/home/isucon/webapp/public/images/*").CombinedOutput(); err != nil {
+		c.Logger().Warnf("画像クリア失敗 with err=%s", string(out))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
+	}
 	initializeTagCache()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
