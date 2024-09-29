@@ -63,8 +63,6 @@ type LivecommentModel2 struct {
 	LivestreamOwnerTheme_DarkMode bool  `db:"livestream_owner_theme_dark_mode"`
 	// livestream_owner_icons
 	LivestreamOwnerIcon_Image []byte `db:"livestream_owner_icon_image"`
-	// tags
-	Livestream_Tags string `db:"livestream_tags"`
 }
 type Livecomment struct {
 	ID         int64      `json:"id"`
@@ -149,7 +147,6 @@ livecomments.id as "livecomment_id"
   , livestream_owner_themes.id as "livestream_owner_theme_id"
   , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
   , livestream_owner_icons.image as "livestream_owner_icon_image"
-  , IFNULL((select CONCAT('[', GROUP_CONCAT(CONCAT('{"id":', tags.id, ',"name":"', tags.name, '"}') SEPARATOR ','), ']') from livestream_tags inner join tags on livestream_tags.tag_id = tags.id where livestream_tags.livestream_id = livecomments.livestream_id), '[]') as "livestream_tags"
 from livecomments
 inner join users on users.id = livecomments.user_id
 inner join themes on themes.user_id = users.id
@@ -183,9 +180,8 @@ order by livecomments.created_at desc
 	// kaizen-01: tagsのUnmarshalは1回だけにして、使い回す
 	var tags []Tag
 	if len(livecommentModels) > 0 {
-		err = json.Unmarshal([]byte(livecommentModels[0].Livestream_Tags), &tags)
-		if err != nil {
-			fmt.Println("JSONのデコードエラー:", err)
+		if tags, err = getLivestreamTags(ctx, tx, livestreamID); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
 		}
 	}
 
