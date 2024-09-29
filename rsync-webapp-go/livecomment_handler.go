@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -315,36 +316,48 @@ func postLivecommentHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var livestreamModel LivestreamModel
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "livestream not found")
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
-		}
-	}
+	// kaizen-06: スパム判定時の不要なSQL発行を抑え、コメント投稿を高速化
+	//var livestreamModel LivestreamModel
+	//if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
+	//	if errors.Is(err, sql.ErrNoRows) {
+	//		return echo.NewHTTPError(http.StatusNotFound, "livestream not found")
+	//	} else {
+	//		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
+	//	}
+	//}
+
+	//// スパム判定
+	//var ngwords []*NGWord
+	//if err := tx.SelectContext(ctx, &ngwords, "SELECT id, user_id, livestream_id, word FROM ng_words WHERE user_id = ? AND livestream_id = ?", livestreamModel.UserID, livestreamModel.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get NG words: "+err.Error())
+	//}
+
+	//var hitSpam int
+	//for _, ngword := range ngwords {
+	//	query := `
+	//	SELECT COUNT(*)
+	//	FROM
+	//	(SELECT ? AS text) AS texts
+	//	INNER JOIN
+	//	(SELECT CONCAT('%', ?, '%')	AS pattern) AS patterns
+	//	ON texts.text LIKE patterns.pattern;
+	//	`
+	//	if err := tx.GetContext(ctx, &hitSpam, query, req.Comment, ngword.Word); err != nil {
+	//		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get hitspam: "+err.Error())
+	//	}
+	//	c.Logger().Infof("[hitSpam=%d] comment = %s", hitSpam, req.Comment)
+	//	if hitSpam >= 1 {
+	//		return echo.NewHTTPError(http.StatusBadRequest, "このコメントがスパム判定されました")
+	//	}
+	//}
 
 	// スパム判定
 	var ngwords []*NGWord
-	if err := tx.SelectContext(ctx, &ngwords, "SELECT id, user_id, livestream_id, word FROM ng_words WHERE user_id = ? AND livestream_id = ?", livestreamModel.UserID, livestreamModel.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := tx.SelectContext(ctx, &ngwords, "SELECT * FROM ng_words WHERE livestream_id = ?", livestreamID); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get NG words: "+err.Error())
 	}
-
-	var hitSpam int
 	for _, ngword := range ngwords {
-		query := `
-		SELECT COUNT(*)
-		FROM
-		(SELECT ? AS text) AS texts
-		INNER JOIN
-		(SELECT CONCAT('%', ?, '%')	AS pattern) AS patterns
-		ON texts.text LIKE patterns.pattern;
-		`
-		if err := tx.GetContext(ctx, &hitSpam, query, req.Comment, ngword.Word); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get hitspam: "+err.Error())
-		}
-		c.Logger().Infof("[hitSpam=%d] comment = %s", hitSpam, req.Comment)
-		if hitSpam >= 1 {
+		if strings.Contains(req.Comment, ngword.Word) {
 			return echo.NewHTTPError(http.StatusBadRequest, "このコメントがスパム判定されました")
 		}
 	}
@@ -362,18 +375,15 @@ func postLivecommentHandler(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livecomment: "+err.Error())
 	}
-
 	livecommentID, err := rs.LastInsertId()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted livecomment id: "+err.Error())
 	}
-	livecommentModel.ID = livecommentID
 
-	livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModel)
+	livecomment, err := queryLivecommentById(ctx, tx, livecommentID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livecomment: "+err.Error())
 	}
-
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
@@ -610,4 +620,100 @@ func fillLivecommentReportResponse(ctx context.Context, tx *sqlx.Tx, reportModel
 		CreatedAt:   reportModel.CreatedAt,
 	}
 	return report, nil
+}
+
+func queryLivecommentById(ctx context.Context, tx *sqlx.Tx, livecommentId int64) (Livecomment, error) {
+	query := `
+select
+  livecomments.id as "livecomment_id"
+  , livecomments.comment as "livecomment_comment"
+  , livecomments.tip as "livecomment_tip"
+  , livecomments.created_at as "livecomment_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , icons.image as "icon_image"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+  , livestream_owner_icons.image as "livestream_owner_icon_image"
+from livecomments
+inner join users on users.id = livecomments.user_id
+inner join themes on themes.user_id = users.id
+left join icons on icons.user_id = users.id
+inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+left join icons as livestream_owner_icons on livestream_owner_icons.user_id = livestream_owners.id
+where livecomments.id = ?
+`
+	var livecommentModel LivecommentModel2
+	if err := tx.GetContext(ctx, &livecommentModel, query, livecommentId); err != nil {
+		return Livecomment{}, err
+	}
+	var livecomment Livecomment
+	iconHash := fallbackImageHash
+	livestreamOwnerIconHash := fallbackImageHash
+	if len(livecommentModel.Icon_Image) > 0 {
+		iconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModel.Icon_Image))
+	}
+	if len(livecommentModel.LivestreamOwnerIcon_Image) > 0 {
+		livestreamOwnerIconHash = fmt.Sprintf("%x", sha256.Sum256(livecommentModel.LivestreamOwnerIcon_Image))
+	}
+	tags, err := getLivestreamTags(ctx, tx, int(livecommentModel.Livestream_ID))
+	if err != nil {
+		return Livecomment{}, err
+	}
+	livecomment = Livecomment{
+		ID: livecommentModel.Livecomment_ID,
+		User: User{
+			ID:          livecommentModel.User_ID,
+			Name:        livecommentModel.User_Name,
+			DisplayName: livecommentModel.User_DisplayName,
+			Description: livecommentModel.User_Description,
+			Theme: Theme{
+				ID:       livecommentModel.Theme_ID,
+				DarkMode: livecommentModel.Theme_DarkMode,
+			},
+			IconHash: iconHash,
+		},
+		Livestream: Livestream{
+			ID: livecommentModel.Livestream_ID,
+			Owner: User{
+				ID:          livecommentModel.LivestreamOwner_ID,
+				Name:        livecommentModel.LivestreamOwner_Name,
+				DisplayName: livecommentModel.LivestreamOwner_DisplayName,
+				Description: livecommentModel.LivestreamOwner_Description,
+				Theme: Theme{
+					ID:       livecommentModel.LivestreamOwnerTheme_ID,
+					DarkMode: livecommentModel.LivestreamOwnerTheme_DarkMode,
+				},
+				IconHash: livestreamOwnerIconHash,
+			},
+			Title:        livecommentModel.Livestream_Title,
+			Description:  livecommentModel.Livestream_Description,
+			PlaylistUrl:  livecommentModel.Livestream_PlaylistUrl,
+			ThumbnailUrl: livecommentModel.Livestream_ThumbnailUrl,
+			Tags:         tags,
+			StartAt:      livecommentModel.Livestream_StartAt,
+			EndAt:        livecommentModel.Livestream_EndAt,
+		},
+		Comment:   livecommentModel.Livecomment_Comment,
+		Tip:       livecommentModel.Livecomment_Tip,
+		CreatedAt: livecommentModel.Livecomment_CreatedAt,
+	}
+	return livecomment, nil
 }
