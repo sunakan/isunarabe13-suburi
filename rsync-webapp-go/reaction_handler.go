@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
@@ -226,45 +224,86 @@ func postReactionHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted reaction id: "+err.Error())
 	}
 	reactionModel.ID = reactionID
-
-	reaction, err := fillReactionResponse(ctx, tx, reactionModel)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
-	}
-
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
-
-	return c.JSON(http.StatusCreated, reaction)
-}
-
-func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel ReactionModel) (Reaction, error) {
-	userModel := UserModel{}
-	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", reactionModel.UserID); err != nil {
-		return Reaction{}, err
+	query := `
+select
+  reactions.id as "reaction_id"
+  , reactions.emoji_name as "reaction_emoji_name"
+  , reactions.created_at as "reaction_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+from reactions
+inner join users on users.id = reactions.user_id
+inner join themes on themes.user_id = users.id
+inner join livestreams on livestreams.id = reactions.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+where reactions.id = ?
+`
+	reactionModel2 := ReactionModel2{}
+	if err := dbConn.GetContext(ctx, &reactionModel2, query, reactionID); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
-	user, err := fillUserResponse(ctx, tx, userModel)
+
+	tags, err := getLivestreamTags2(ctx, reactionModel2.Livestream_ID)
 	if err != nil {
-		return Reaction{}, err
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
 	}
-
-	livestreamModel := LivestreamModel{}
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", reactionModel.LivestreamID); err != nil {
-		return Reaction{}, err
-	}
-	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
-	if err != nil {
-		return Reaction{}, err
-	}
-
 	reaction := Reaction{
-		ID:         reactionModel.ID,
-		EmojiName:  reactionModel.EmojiName,
-		User:       user,
-		Livestream: livestream,
-		CreatedAt:  reactionModel.CreatedAt,
+		ID:        reactionModel2.Reaction_ID,
+		EmojiName: reactionModel2.Reaction_EmojiName,
+		User: User{
+			ID:          reactionModel2.User_ID,
+			Name:        reactionModel2.User_Name,
+			DisplayName: reactionModel2.User_DisplayName,
+			Description: reactionModel2.User_Description,
+			Theme: Theme{
+				ID:       reactionModel2.Theme_ID,
+				DarkMode: reactionModel2.Theme_DarkMode,
+			},
+			IconHash: getIconHashByUserId(reactionModel2.User_ID),
+		},
+		Livestream: Livestream{
+			ID: reactionModel2.Livestream_ID,
+			Owner: User{
+				ID:          reactionModel2.LivestreamOwner_ID,
+				Name:        reactionModel2.LivestreamOwner_Name,
+				DisplayName: reactionModel2.LivestreamOwner_DisplayName,
+				Description: reactionModel2.LivestreamOwner_Description,
+				Theme: Theme{
+					ID:       reactionModel2.LivestreamOwnerTheme_ID,
+					DarkMode: reactionModel2.LivestreamOwnerTheme_DarkMode,
+				},
+				IconHash: getIconHashByUserId(reactionModel2.LivestreamOwner_ID),
+			},
+			Title:        reactionModel2.Livestream_Title,
+			Description:  reactionModel2.Livestream_Description,
+			PlaylistUrl:  reactionModel2.Livestream_PlaylistUrl,
+			ThumbnailUrl: reactionModel2.Livestream_ThumbnailUrl,
+			Tags:         tags,
+			StartAt:      reactionModel2.Livestream_StartAt,
+			EndAt:        reactionModel2.Livestream_EndAt,
+		},
+		CreatedAt: reactionModel2.Reaction_CreatedAt,
 	}
-
-	return reaction, nil
+	return c.JSON(http.StatusCreated, reaction)
 }
