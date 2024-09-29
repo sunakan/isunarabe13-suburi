@@ -4,15 +4,17 @@ import (
 	"context"
 	"github.com/jmoiron/sqlx"
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
 
 var (
+	tagIdCache     = cmap.New[*Tag]()
 	tagNameCache   = cmap.New[*Tag]()
 	tagMutex       sync.Mutex
 	tagId          atomic.Int64
-	livestreamTags = sync.Map{}
+	livestreamTags = cmap.New[[]*Tag]()
 )
 
 // tagsテーブルの代替
@@ -40,10 +42,11 @@ func initializeTagCache() {
 		{ID: 96, Name: "コンサート"}, {ID: 97, Name: "ファンミーティング"}, {ID: 98, Name: "コラボ配信"}, {ID: 99, Name: "記念配信"}, {ID: 100, Name: "生誕祭"},
 		{ID: 101, Name: "周年記念"}, {ID: 102, Name: "サプライズ"}, {ID: 103, Name: "椅子"},
 	}
+	tagIdCache.Clear()
 	tagNameCache.Clear()
 	tagId.Store(103)
-	tagNameCache = cmap.New[*Tag]()
 	for _, tag := range tags {
+		tagIdCache.Set(strconv.FormatInt(tag.ID, 10), &tag)
 		tagNameCache.Set(tag.Name, &tag)
 	}
 }
@@ -52,44 +55,69 @@ func initializeTagCache() {
 // キャッシュにない場合、atomic.AddInt64でIDをインクリメントして新規作成
 // tagNameCacheに存在しない同じTagが同時にgetTagByNameされた場合、IDがむやみにインクリメントされる重複する可能性がある
 // mutexを使って排他制御
-func getTagByName(name string) *Tag {
+func getPtrTagByName(name string) *Tag {
 	if tag, ok := tagNameCache.Get(name); ok {
 		return tag
 	}
 	// キャッシュにない場合、ロックを取得して、もう解除後はもう一度確認
 	tagMutex.Lock()
-	if tag, ok := tagNameCache.Get(name); ok {
-		return tag
+	if ptrTag, ok := tagNameCache.Get(name); ok {
+		return ptrTag
 	}
 	defer tagMutex.Unlock()
-	newTag := &Tag{ID: tagId.Add(1), Name: name}
-	tagNameCache.Set(name, newTag)
-	return newTag
+	ptrTag := &Tag{ID: tagId.Add(1), Name: name}
+	tagNameCache.Set(name, ptrTag)
+	return ptrTag
 }
 
+// タグIDからTagを取得
+func getPtrTagByID(id int64) *Tag {
+	if ptrTag, ok := tagIdCache.Get(strconv.FormatInt(id, 10)); ok {
+		return ptrTag
+	}
+	return nil
+}
+
+// Livestreamに紐づくタグを取得
 func getLivestreamTags(ctx context.Context, tx *sqlx.Tx, streamID int64) ([]Tag, error) {
-	if tags, ok := livestreamTags.Load(streamID); ok {
-		return tags.([]Tag), nil
+	if ptrTags, ok := livestreamTags.Get(strconv.FormatInt(streamID, 10)); ok {
+		tags := make([]Tag, len(ptrTags))
+		for i, tag := range ptrTags {
+			tags[i] = *tag
+		}
+		return tags, nil
 	} else {
 		tags := []Tag{}
 		query := `select tags.* from tags inner join livestream_tags on tags.id = livestream_tags.tag_id where livestream_tags.livestream_id = ?;`
 		if err := tx.SelectContext(ctx, &tags, query, streamID); err != nil {
 			return nil, err
 		}
-		livestreamTags.Store(streamID, tags)
+		storedTags := make([]*Tag, len(tags))
+		for i, tag := range tags {
+			storedTags[i] = getPtrTagByID(tag.ID)
+		}
+		livestreamTags.Set(strconv.FormatInt(streamID, 10), storedTags)
 		return tags, nil
 	}
 }
 func getLivestreamTags2(ctx context.Context, streamID int64) ([]Tag, error) {
-	if tags, ok := livestreamTags.Load(streamID); ok {
-		return tags.([]Tag), nil
+	if ptrTags, ok := livestreamTags.Get(strconv.FormatInt(streamID, 10)); ok {
+		tags := make([]Tag, len(ptrTags))
+		for i, tag := range ptrTags {
+			tags[i] = *tag
+		}
+		return tags, nil
 	} else {
 		tags := []Tag{}
 		query := `select tags.* from tags inner join livestream_tags on tags.id = livestream_tags.tag_id where livestream_tags.livestream_id = ?;`
 		if err := dbConn.SelectContext(ctx, &tags, query, streamID); err != nil {
 			return nil, err
 		}
-		livestreamTags.Store(streamID, tags)
+		storedTags := make([]*Tag, len(tags))
+		for i, tag := range tags {
+			storedTags[i] = getPtrTagByID(tag.ID)
+		}
+		livestreamTags.Set(strconv.FormatInt(streamID, 10), storedTags)
 		return tags, nil
 	}
 }
