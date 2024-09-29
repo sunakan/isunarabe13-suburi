@@ -71,133 +71,8 @@ func getUserStatisticsHandler(c echo.Context) error {
 	// ユーザごとに、紐づく配信について、累計リアクション数、累計ライブコメント数、累計売上金額を算出
 	// また、現在の合計視聴者数もだす
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	// 	var user UserModel
-	// 	if err := tx.GetContext(ctx, &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-	// 		if errors.Is(err, sql.ErrNoRows) {
-	// 			return echo.NewHTTPError(http.StatusBadRequest, "not found user that has the given username")
-	// 		} else {
-	// 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
-	// 		}
-	// 	}
-	//
-	// 	// ランク算出
-	// 	var users []*UserModel
-	// 	if err := tx.SelectContext(ctx, &users, "SELECT * FROM users"); err != nil {
-	// 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get users: "+err.Error())
-	// 	}
-	//
-	// 	var ranking UserRanking
-	// 	for _, user := range users {
-	// 		var reactions int64
-	// 		query := `
-	// 		SELECT COUNT(*) FROM users u
-	// 		INNER JOIN livestreams l ON l.user_id = u.id
-	// 		INNER JOIN reactions r ON r.livestream_id = l.id
-	// 		WHERE u.id = ?`
-	// 		if err := tx.GetContext(ctx, &reactions, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
-	// 		}
-	//
-	// 		var tips int64
-	// 		query = `
-	// 		SELECT IFNULL(SUM(l2.tip), 0) FROM users u
-	// 		INNER JOIN livestreams l ON l.user_id = u.id
-	// 		INNER JOIN livecomments l2 ON l2.livestream_id = l.id
-	// 		WHERE u.id = ?`
-	// 		if err := tx.GetContext(ctx, &tips, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
-	// 		}
-	//
-	// 		score := reactions + tips
-	// 		ranking = append(ranking, UserRankingEntry{
-	// 			Username: user.Name,
-	// 			Score:    score,
-	// 		})
-	// 	}
-	// 	sort.Sort(ranking)
-	//
-	// 	var rank int64 = 1
-	// 	for i := len(ranking) - 1; i >= 0; i-- {
-	// 		entry := ranking[i]
-	// 		if entry.Username == username {
-	// 			break
-	// 		}
-	// 		rank++
-	// 	}
-	//
-	// 	// リアクション数
-	// 	var totalReactions int64
-	// 	query := `SELECT COUNT(*) FROM users u
-	//     INNER JOIN livestreams l ON l.user_id = u.id
-	//     INNER JOIN reactions r ON r.livestream_id = l.id
-	//     WHERE u.name = ?
-	// 	`
-	// 	if err := tx.GetContext(ctx, &totalReactions, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count total reactions: "+err.Error())
-	// 	}
-	//
-	// 	// ライブコメント数、チップ合計
-	// 	var totalLivecomments int64
-	// 	var totalTip int64
-	// 	var livestreams []*LivestreamModel
-	// 	if err := tx.SelectContext(ctx, &livestreams, "SELECT * FROM livestreams WHERE user_id = ?", user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
-	// 	}
-	//
-	// 	for _, livestream := range livestreams {
-	// 		var livecomments []*LivecommentModel
-	// 		if err := tx.SelectContext(ctx, &livecomments, "SELECT * FROM livecomments WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
-	// 		}
-	//
-	// 		for _, livecomment := range livecomments {
-	// 			totalTip += livecomment.Tip
-	// 			totalLivecomments++
-	// 		}
-	// 	}
-	//
-	// 	// 合計視聴者数
-	// 	var viewersCount int64
-	// 	for _, livestream := range livestreams {
-	// 		var cnt int64
-	// 		if err := tx.GetContext(ctx, &cnt, "SELECT COUNT(*) FROM livestream_viewers_history WHERE livestream_id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream_view_history: "+err.Error())
-	// 		}
-	// 		viewersCount += cnt
-	// 	}
-	//
-	// 	// お気に入り絵文字
-	// 	var favoriteEmoji string
-	// 	query = `
-	// 	SELECT r.emoji_name
-	// 	FROM users u
-	// 	INNER JOIN livestreams l ON l.user_id = u.id
-	// 	INNER JOIN reactions r ON r.livestream_id = l.id
-	// 	WHERE u.name = ?
-	// 	GROUP BY emoji_name
-	// 	ORDER BY COUNT(*) DESC, emoji_name DESC
-	// 	LIMIT 1
-	// 	`
-	// 	if err := tx.GetContext(ctx, &favoriteEmoji, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
-	// 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find favorite emoji: "+err.Error())
-	// 	}
-	//
-	// 	stats := UserStatistics{
-	// 		Rank:              rank,
-	// 		ViewersCount:      viewersCount,
-	// 		TotalReactions:    totalReactions,
-	// 		TotalLivecomments: totalLivecomments,
-	// 		TotalTip:          totalTip,
-	// 		FavoriteEmoji:     favoriteEmoji,
-	// 	}
-
 	// kaizen-03: 1発で取得
+	// スコア: reactions(INSERTされるだけ) + tips(時々NgWordで設定によって、削除されて減る)
 	query := `
 with scores as (
 select
@@ -227,11 +102,8 @@ where user_ranking.user_name = ?
 ;
 `
 	stats := UserStatistics{}
-	if err := tx.GetContext(ctx, &stats, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := dbConn.GetContext(ctx, &stats, query, username); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get stats: "+err.Error())
-	}
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 	return c.JSON(http.StatusOK, stats)
 }
