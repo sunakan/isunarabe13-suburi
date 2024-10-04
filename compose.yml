@@ -1,0 +1,16 @@
+---
+
+services:
+  db:
+    image: mysql:8.0.39-debian
+    platform: linux/amd64
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: true
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    ports:
+      - 3306:3306
+    volumes:
+      - type: bind
+        source: ${PWD}/db-sql/
+        target: /docker-entrypoint-initdb.d/
