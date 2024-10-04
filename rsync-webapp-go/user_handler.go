@@ -298,12 +298,10 @@ func registerHandler(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user: "+err.Error())
 	}
-
 	userID, err := result.LastInsertId()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted user id: "+err.Error())
 	}
-
 	userModel.ID = userID
 
 	themeModel := ThemeModel{
@@ -313,17 +311,11 @@ func registerHandler(c echo.Context) error {
 	if _, err := tx.NamedExecContext(ctx, "INSERT INTO themes (user_id, dark_mode) VALUES(:user_id, :dark_mode)", themeModel); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user theme: "+err.Error())
 	}
-
-	// kaizen-05: DNS用のDBに直接サブドメインを追加
-	//if out, err := exec.Command("pdnsutil", "add-record", "t.isucon.pw", req.Name, "A", "0", powerDNSSubdomainAddress).CombinedOutput(); err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, string(out)+": "+err.Error())
-	//}
-
-	user, err := fillUserResponse(ctx, tx, userModel)
+	themeID, err := result.LastInsertId()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted theme id: "+err.Error())
 	}
-
+	themeModel.ID = themeID
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
@@ -331,6 +323,18 @@ func registerHandler(c echo.Context) error {
 	// kaizen-05: DNS用のDBに直接サブドメインを追加
 	if err := addSubdomain(req.Name); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add subdomain: "+err.Error())
+	}
+
+	user := User{
+		ID:          userModel.ID,
+		Name:        userModel.Name,
+		DisplayName: userModel.DisplayName,
+		Description: userModel.Description,
+		Theme: Theme{
+			ID:       themeModel.ID,
+			DarkMode: themeModel.DarkMode,
+		},
+		IconHash: fallbackImageHash,
 	}
 
 	return c.JSON(http.StatusCreated, user)
