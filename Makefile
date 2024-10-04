@@ -4,7 +4,7 @@ build-cfn: cloudformation.yml ## CFnファイルをbuild
 	@diff -ur cloudformation.yml tmp/cloudformation.yml | delta
 
 .PHONY: ssh-config-for-isucon
-ssh-config-for-isucon:
+ssh-config-for-isucon: ## ~/.ssh/config-for-isucon.d/config 作成
 	@mkdir -p ~/.ssh/config-for-isucon.d
 	@aws ec2 describe-instances --output json --query 'Reservations[].Instances[]' \
 	| jq -rc '.[] | {ip: .NetworkInterfaces[0].Association.PublicIp, name: .Tags[] | select(.Key == "Name") | .Value}' \
