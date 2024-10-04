@@ -10,7 +10,7 @@ ssh-config-for-isucon: ## ~/.ssh/config-for-isucon.d/config 作成
 	| jq -rc '.[] | {ip: .NetworkInterfaces[0].Association.PublicIp, name: .Tags[] | select(.Key == "Name") | .Value}' \
 	| jq -src '. | sort_by(.name)[] | ["isu-\(.name | split("-")[1])", .ip] | @csv' \
 	| sed 's/"//g' \
-	| awk -F, '{print "Host "$$1"\n  HostName "$$2"\n  User isucon\n  IdentityFile ~/.ssh/id_rsa\n  StrictHostKeyChecking no"}' > ~/.ssh/config-for-isucon.d/config
+	| awk -F, '{print "Host "$$1"\n  HostName "$$2"\n  User isucon\n  IdentityFile ~/.ssh/id_rsa\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null"}' > ~/.ssh/config-for-isucon.d/config
 	@chmod 644 ~/.ssh/config-for-isucon.d/config
 
 .PHONY: check-authorized-keys
@@ -256,6 +256,10 @@ tmp/servers:
 	@echo 'isu-2' >> tmp/servers
 	@echo 'isu-3' >> tmp/servers
 	@echo 'isu-bench' >> tmp/servers
+	@cat tmp/servers | grep -v bench > tmp/nginx-servers
+	@cat tmp/servers | grep -v bench > tmp/db-servers
+	@cat tmp/servers | grep -v bench > tmp/dns-servers
+	@cat tmp/servers | grep -v bench > tmp/webapp-servers
 
 ################################################################################
 # Utility-Command help
