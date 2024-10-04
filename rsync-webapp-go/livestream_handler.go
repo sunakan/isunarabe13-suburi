@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
@@ -635,6 +633,8 @@ where livestreams.id = ?
 	return c.JSON(http.StatusOK, livestream)
 }
 
+// 指定した livestream_id に紐づく
+// 指定したLivestreamは自分のものであること
 func getLivecommentReportsHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -647,38 +647,125 @@ func getLivecommentReportsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "livestream_id in path must be integer")
 	}
 
+	// error already check
+	sess, _ := session.Get(defaultSessionIDKey, c)
+	// existence already check
+	userID := sess.Values[defaultUserIDKey].(int64)
+
 	tx, err := dbConn.BeginTxx(ctx, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
 	}
 	defer tx.Rollback()
 
-	var livestreamModel LivestreamModel
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
-	}
-
-	// error already check
-	sess, _ := session.Get(defaultSessionIDKey, c)
-	// existence already check
-	userID := sess.Values[defaultUserIDKey].(int64)
-
-	if livestreamModel.UserID != userID {
-		return echo.NewHTTPError(http.StatusForbidden, "can't get other streamer's livecomment reports")
-	}
-
-	var reportModels []*LivecommentReportModel
-	if err := tx.SelectContext(ctx, &reportModels, "SELECT * FROM livecomment_reports WHERE livestream_id = ?", livestreamID); err != nil {
+	query := `
+select
+  livecomment_reports.id as "livecomment_report_id"
+  , livecomment_reports.created_at as "livecomment_report_created_at"
+  , users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+  , livecomments.id as "livecomment_id"
+  , livecomments.comment as "livecomment_comment"
+  , livecomments.tip as "livecomment_tip"
+  , livecomments.created_at as "livecomment_created_at"
+  , commenters.id as "commenter_id"
+  , commenters.name as "commenter_name"
+  , commenters.display_name as "commenter_display_name"
+  , commenters.description as "commenter_description"
+  , commenter_themes.id as "commenter_theme_id"
+  , commenter_themes.dark_mode as "commenter_theme_dark_mode"
+  , livestreams.id as "livestream_id"
+  , livestreams.title as "livestream_title"
+  , livestreams.description as "livestream_description"
+  , livestreams.playlist_url as "livestream_playlist_url"
+  , livestreams.thumbnail_url as "livestream_thumbnail_url"
+  , livestreams.start_at as "livestream_start_at"
+  , livestreams.end_at as "livestream_end_at"
+  , livestream_owners.id as "livestream_owner_id"
+  , livestream_owners.name as "livestream_owner_name"
+  , livestream_owners.display_name as "livestream_owner_display_name"
+  , livestream_owners.description as "livestream_owner_description"
+  , livestream_owner_themes.id as "livestream_owner_theme_id"
+  , livestream_owner_themes.dark_mode as "livestream_owner_theme_dark_mode"
+from livecomment_reports
+inner join users on users.id = livecomment_reports.user_id
+inner join themes on themes.user_id = users.id
+inner join livecomments on livecomment_reports.livecomment_id = livecomments.id
+inner join users as commenters on commenters.id = livecomments.user_id
+inner join themes as commenter_themes on commenter_themes.user_id = commenters.id
+inner join livestreams on livestreams.id = livecomments.livestream_id
+inner join users as livestream_owners on livestream_owners.id = livestreams.user_id
+inner join themes as livestream_owner_themes on livestream_owner_themes.user_id = livestream_owners.id
+where livestreams.id = ? and livestream_owners.id = ?
+`
+	var reportModels []*LivecommentReportModel2
+	if err := tx.SelectContext(ctx, &reportModels, query, livestreamID, userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomment reports: "+err.Error())
 	}
 
 	reports := make([]LivecommentReport, len(reportModels))
-	for i := range reportModels {
-		report, err := fillLivecommentReportResponse(ctx, tx, *reportModels[i])
+	for i, livecommentReportModel2 := range reportModels {
+		tags, err := getLivestreamTags2(ctx, livecommentReportModel2.Livestream_ID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livecomment report: "+err.Error())
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream tags: "+err.Error())
 		}
-		reports[i] = report
+		reports[i] = LivecommentReport{
+			ID: livecommentReportModel2.LivecommentReport_ID,
+			Reporter: User{
+				ID:          livecommentReportModel2.User_ID,
+				Name:        livecommentReportModel2.User_Name,
+				DisplayName: livecommentReportModel2.User_DisplayName,
+				Description: livecommentReportModel2.User_Description,
+				Theme: Theme{
+					ID:       livecommentReportModel2.Theme_ID,
+					DarkMode: livecommentReportModel2.Theme_DarkMode,
+				},
+				IconHash: getIconHashByUserId(livecommentReportModel2.User_ID),
+			},
+			Livecomment: Livecomment{
+				ID: livecommentReportModel2.Livecomment_ID,
+				User: User{
+					ID:          livecommentReportModel2.Commenter_ID,
+					Name:        livecommentReportModel2.Commenter_Name,
+					DisplayName: livecommentReportModel2.Commenter_DisplayName,
+					Description: livecommentReportModel2.Commenter_Description,
+					Theme: Theme{
+						ID:       livecommentReportModel2.CommenterTheme_ID,
+						DarkMode: livecommentReportModel2.CommenterTheme_DarkMode,
+					},
+					IconHash: getIconHashByUserId(livecommentReportModel2.Commenter_ID),
+				},
+				Livestream: Livestream{
+					ID:           livecommentReportModel2.Livestream_ID,
+					Title:        livecommentReportModel2.Livestream_Title,
+					Description:  livecommentReportModel2.Livestream_Description,
+					PlaylistUrl:  livecommentReportModel2.Livestream_PlaylistUrl,
+					ThumbnailUrl: livecommentReportModel2.Livestream_ThumbnailUrl,
+					Tags:         tags,
+					StartAt:      livecommentReportModel2.Livestream_StartAt,
+					EndAt:        livecommentReportModel2.Livestream_EndAt,
+					Owner: User{
+						ID:          livecommentReportModel2.LivestreamOwner_ID,
+						Name:        livecommentReportModel2.LivestreamOwner_Name,
+						DisplayName: livecommentReportModel2.LivestreamOwner_DisplayName,
+						Description: livecommentReportModel2.LivestreamOwner_Description,
+						Theme: Theme{
+							ID:       livecommentReportModel2.LivestreamOwnerTheme_ID,
+							DarkMode: livecommentReportModel2.LivestreamOwnerTheme_DarkMode,
+						},
+						IconHash: getIconHashByUserId(livecommentReportModel2.LivestreamOwner_ID),
+					},
+				},
+				Comment:   livecommentReportModel2.Livecomment_Comment,
+				Tip:       livecommentReportModel2.Livecomment_Tip,
+				CreatedAt: livecommentReportModel2.Livecomment_CreatedAt,
+			},
+			CreatedAt: livecommentReportModel2.LivecommentReport_CreatedAt,
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -686,46 +773,4 @@ func getLivecommentReportsHandler(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, reports)
-}
-
-func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel LivestreamModel) (Livestream, error) {
-	ownerModel := UserModel{}
-	if err := tx.GetContext(ctx, &ownerModel, "SELECT * FROM users WHERE id = ?", livestreamModel.UserID); err != nil {
-		return Livestream{}, err
-	}
-	owner, err := fillUserResponse(ctx, tx, ownerModel)
-	if err != nil {
-		return Livestream{}, err
-	}
-
-	var livestreamTagModels []*LivestreamTagModel
-	if err := tx.SelectContext(ctx, &livestreamTagModels, "SELECT * FROM livestream_tags WHERE livestream_id = ?", livestreamModel.ID); err != nil {
-		return Livestream{}, err
-	}
-
-	tags := make([]Tag, len(livestreamTagModels))
-	for i := range livestreamTagModels {
-		tagModel := TagModel{}
-		if err := tx.GetContext(ctx, &tagModel, "SELECT * FROM tags WHERE id = ?", livestreamTagModels[i].TagID); err != nil {
-			return Livestream{}, err
-		}
-
-		tags[i] = Tag{
-			ID:   tagModel.ID,
-			Name: tagModel.Name,
-		}
-	}
-
-	livestream := Livestream{
-		ID:           livestreamModel.ID,
-		Owner:        owner,
-		Title:        livestreamModel.Title,
-		Tags:         tags,
-		Description:  livestreamModel.Description,
-		PlaylistUrl:  livestreamModel.PlaylistUrl,
-		ThumbnailUrl: livestreamModel.ThumbnailUrl,
-		StartAt:      livestreamModel.StartAt,
-		EndAt:        livestreamModel.EndAt,
-	}
-	return livestream, nil
 }
