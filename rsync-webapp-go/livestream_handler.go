@@ -151,8 +151,11 @@ func reserveLivestreamHandler(c echo.Context) error {
 	if _, err := tx.ExecContext(ctx, "UPDATE reservation_slots SET slot = slot - 1 WHERE start_at >= ? AND end_at <= ?", req.StartAt, req.EndAt); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update reservation_slot: "+err.Error())
 	}
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
+	}
 
-	rs, err := tx.NamedExecContext(ctx, "INSERT INTO livestreams (user_id, title, description, playlist_url, thumbnail_url, start_at, end_at) VALUES(:user_id, :title, :description, :playlist_url, :thumbnail_url, :start_at, :end_at)", livestreamModel)
+	rs, err := dbConn.NamedExecContext(ctx, "INSERT INTO livestreams (user_id, title, description, playlist_url, thumbnail_url, start_at, end_at) VALUES(:user_id, :title, :description, :playlist_url, :thumbnail_url, :start_at, :end_at)", livestreamModel)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream: "+err.Error())
 	}
@@ -176,12 +179,9 @@ func reserveLivestreamHandler(c echo.Context) error {
 		}
 	}
 	if 0 < len(insertTags) {
-		if _, err := tx.NamedExecContext(ctx, "INSERT INTO livestream_tags (livestream_id, tag_id) VALUES (:livestream_id, :tag_id)", insertTags); err != nil {
+		if _, err := dbConn.NamedExecContext(ctx, "INSERT INTO livestream_tags (livestream_id, tag_id) VALUES (:livestream_id, :tag_id)", insertTags); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream tag: "+err.Error())
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 	livestreamTags.Set(strconv.FormatInt(livestreamID, 10), ptrTags)
 
@@ -506,24 +506,14 @@ func enterLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "livestream_id must be integer")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	viewer := LivestreamViewerModel{
 		UserID:       int64(userID),
 		LivestreamID: int64(livestreamID),
 		CreatedAt:    time.Now().Unix(),
 	}
 
-	if _, err := tx.NamedExecContext(ctx, "INSERT INTO livestream_viewers_history (user_id, livestream_id, created_at) VALUES(:user_id, :livestream_id, :created_at)", viewer); err != nil {
+	if _, err := dbConn.NamedExecContext(ctx, "INSERT INTO livestream_viewers_history (user_id, livestream_id, created_at) VALUES(:user_id, :livestream_id, :created_at)", viewer); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert livestream_view_history: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -546,18 +536,8 @@ func exitLivestreamHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "livestream_id in path must be integer")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, "DELETE FROM livestream_viewers_history WHERE user_id = ? AND livestream_id = ?", userID, livestreamID); err != nil {
+	if _, err := dbConn.ExecContext(ctx, "DELETE FROM livestream_viewers_history WHERE user_id = ? AND livestream_id = ?", userID, livestreamID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete livestream_view_history: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -652,12 +632,6 @@ func getLivecommentReportsHandler(c echo.Context) error {
 	// existence already check
 	userID := sess.Values[defaultUserIDKey].(int64)
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	query := `
 select
   livecomment_reports.id as "livecomment_report_id"
@@ -703,7 +677,7 @@ inner join themes as livestream_owner_themes on livestream_owner_themes.user_id 
 where livestreams.id = ? and livestream_owners.id = ?
 `
 	var reportModels []*LivecommentReportModel2
-	if err := tx.SelectContext(ctx, &reportModels, query, livestreamID, userID); err != nil {
+	if err := dbConn.SelectContext(ctx, &reportModels, query, livestreamID, userID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomment reports: "+err.Error())
 	}
 
@@ -766,10 +740,6 @@ where livestreams.id = ? and livestream_owners.id = ?
 			},
 			CreatedAt: livecommentReportModel2.LivecommentReport_CreatedAt,
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	return c.JSON(http.StatusOK, reports)

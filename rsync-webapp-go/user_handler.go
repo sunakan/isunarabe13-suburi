@@ -155,28 +155,6 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	// kaizen-07: 画像は書き出す(Nginxで返している)。ハッシュ値を計算してインメモリキャッシュ
-	//tx, err := dbConn.BeginTxx(ctx, nil)
-	//if err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	//}
-	//defer tx.Rollback()
-
-	//if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
-	//}
-	//rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
-	//if err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
-	//}
-	//iconID, err := rs.LastInsertId()
-	//if err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
-	//}
-	//if err := tx.Commit(); err != nil {
-	//	return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	//}
-
 	storeIconHash(userID, fmt.Sprintf("%x", sha256.Sum256(req.Image)))
 	// 画像をファイルに保存
 	// エラーが発生しても処理を続行し、ログに記録
@@ -263,12 +241,6 @@ func registerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate hashed password: "+err.Error())
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	userModel := UserModel{
 		Name:           req.Name,
 		DisplayName:    req.DisplayName,
@@ -276,7 +248,7 @@ func registerHandler(c echo.Context) error {
 		HashedPassword: string(hashedPassword),
 	}
 
-	result, err := tx.NamedExecContext(ctx, "INSERT INTO users (name, display_name, description, password) VALUES(:name, :display_name, :description, :password)", userModel)
+	result, err := dbConn.NamedExecContext(ctx, "INSERT INTO users (name, display_name, description, password) VALUES(:name, :display_name, :description, :password)", userModel)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user: "+err.Error())
 	}
@@ -290,7 +262,7 @@ func registerHandler(c echo.Context) error {
 		UserID:   userID,
 		DarkMode: req.Theme.DarkMode,
 	}
-	if _, err := tx.NamedExecContext(ctx, "INSERT INTO themes (user_id, dark_mode) VALUES(:user_id, :dark_mode)", themeModel); err != nil {
+	if _, err := dbConn.NamedExecContext(ctx, "INSERT INTO themes (user_id, dark_mode) VALUES(:user_id, :dark_mode)", themeModel); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user theme: "+err.Error())
 	}
 	themeID, err := result.LastInsertId()
@@ -298,9 +270,6 @@ func registerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted theme id: "+err.Error())
 	}
 	themeModel.ID = themeID
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
 
 	addSubdomain(req.Name + ".t.isucon.pw.")
 
@@ -330,24 +299,14 @@ func loginHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
 	userModel := UserModel{}
 	// usernameはUNIQUEなので、whereで一意に特定できる
-	err = tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", req.Username)
+	err := dbConn.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", req.Username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid username or password")
 	}
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(userModel.HashedPassword), []byte(req.Password))
