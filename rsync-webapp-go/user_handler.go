@@ -244,6 +244,7 @@ where users.id = ?
 
 // ユーザ登録API
 // POST /api/register
+// DNSと同じ場所にあると良い
 func registerHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 	defer c.Request().Body.Close()
@@ -301,10 +302,7 @@ func registerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
 
-	// kaizen-05: DNS用のDBに直接サブドメインを追加
-	if err := addSubdomain(req.Name); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to add subdomain: "+err.Error())
-	}
+	addSubdomain(req.Name + ".t.isucon.pw.")
 
 	user := User{
 		ID:          userModel.ID,

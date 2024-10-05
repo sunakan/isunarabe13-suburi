@@ -130,6 +130,9 @@ func initializeHandler(c echo.Context) error {
 	}
 	initializeTagCache()
 
+	// DNSを初期化
+	resetSubdomains()
+
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{
 		Language: "golang",
@@ -137,6 +140,8 @@ func initializeHandler(c echo.Context) error {
 }
 
 func main() {
+	go startDNS()
+
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(echolog.DEBUG)
@@ -217,16 +222,6 @@ func main() {
 		os.Exit(1)
 	}
 	powerDNSSubdomainAddress = subdomainAddr
-
-	// kaizen-05
-	// DNS用DBに接続
-	conn2, err := connectDNSDB("192.168.0.11")
-	if err != nil {
-		e.Logger.Errorf("failed to connect db: %v", err)
-		os.Exit(1)
-	}
-	defer conn2.Close()
-	dnsDbConn = conn2
 
 	// HTTPサーバ起動
 	listenAddr := net.JoinHostPort("", strconv.Itoa(listenPort))
