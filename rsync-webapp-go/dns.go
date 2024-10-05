@@ -64,8 +64,7 @@ func handle(w dns.ResponseWriter, r *dns.Msg) {
 		if slices.Contains(subdomains, r.Question[0].Name) {
 			m.Answer = []dns.RR{
 				// 名前解決後のAPPサーバー
-				// DNSと同じところにする
-				newRR(r.Question[0].Name + " 5 IN A 192.168.0.11"),
+				newRR(r.Question[0].Name + " 5 IN A 192.168.0.12"),
 			}
 		} else {
 			// 水責めに対して対応=何も返さない
