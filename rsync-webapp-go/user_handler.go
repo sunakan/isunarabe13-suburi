@@ -206,13 +206,6 @@ func getMeHandler(c echo.Context) error {
 	// existence already checked
 	userID := sess.Values[defaultUserIDKey].(int64)
 
-	// kaizen-07: IconHashはインメモリキャッシュ
-	// tx, err := dbConn.BeginTxx(ctx, nil)
-	// if err != nil {
-	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	// }
-	// defer tx.Rollback()
-
 	query := `
 select
   users.id as "user_id"
@@ -233,16 +226,6 @@ where users.id = ?
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
-
-	// kaizen-07: IconHashはインメモリキャッシュ
-	// user, err := fillUserResponse(ctx, tx, userModel)
-	// if err != nil {
-	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
-	// }
-
-	// if err := tx.Commit(); err != nil {
-	// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	// }
 
 	user := User{
 		ID:          userModel.ID,

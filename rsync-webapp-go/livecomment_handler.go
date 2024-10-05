@@ -223,11 +223,6 @@ order by livecomments.created_at desc
 
 	livecomments := make([]Livecomment, len(livecommentModels))
 	for i := range livecommentModels {
-		// kaizen-01: 1発で取得したので、関数に投げない。ここでfillする
-		// livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
-		// if err != nil {
-		// 	return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
-		// }
 		livecomments[i] = Livecomment{
 			ID: livecommentModels[i].Livecomment_ID,
 			User: User{
