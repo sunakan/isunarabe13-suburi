@@ -49,12 +49,12 @@ func handle(w dns.ResponseWriter, r *dns.Msg) {
 
 	// "t.example.com." ドメインに対するNSクエリの場合、特定のNSレコードとAレコードを返す
 	// NSクエリの発行は、dig @*.*.*.* -p 50053 t.example.com NS +short
-	if r.Question[0].Qtype == dns.TypeNS && r.Question[0].Name == "t.example.com." {
+	if r.Question[0].Qtype == dns.TypeNS && r.Question[0].Name == "t.isucon.pw." {
 		m.Answer = []dns.RR{
-			newRR("t.example.com. 5 IN NS ns1.t.example.com."),
+			newRR("t.isucon.pw. 120 IN NS ns1.t.isucon.pw."),
 		}
 		m.Extra = []dns.RR{
-			newRR("ns1.t.example.com. 5 IN A 192.168.0.11"),
+			newRR("ns1.t.isucon.pw. 120 IN A 192.168.0.11"),
 		}
 	} else {
 		muSubdomains.RLock()
@@ -64,7 +64,7 @@ func handle(w dns.ResponseWriter, r *dns.Msg) {
 		if slices.Contains(subdomains, r.Question[0].Name) {
 			m.Answer = []dns.RR{
 				// 名前解決後のAPPサーバー
-				newRR(r.Question[0].Name + " 5 IN A 192.168.0.12"),
+				newRR(r.Question[0].Name + " 120 IN A 192.168.0.12"),
 			}
 		} else {
 			// 水責めに対して対応=何も返さない
