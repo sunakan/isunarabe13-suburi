@@ -23,23 +23,8 @@ type TagsResponse struct {
 }
 
 func getTagHandler(c echo.Context) error {
-	ctx := c.Request().Context()
-
-	// todo: キャッシュを利用する
-	var tagModels []*TagModel
-	if err := dbConn.SelectContext(ctx, &tagModels, "SELECT * FROM tags"); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get tags: "+err.Error())
-	}
-
-	tags := make([]*Tag, len(tagModels))
-	for i := range tagModels {
-		tags[i] = &Tag{
-			ID:   tagModels[i].ID,
-			Name: tagModels[i].Name,
-		}
-	}
 	return c.JSON(http.StatusOK, &TagsResponse{
-		Tags: tags,
+		Tags: tagsCache,
 	})
 }
 

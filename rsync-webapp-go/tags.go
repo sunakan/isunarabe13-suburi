@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	tagsCache      []*Tag
 	tagIdCache     = cmap.New[*Tag]()
 	tagNameCache   = cmap.New[*Tag]()
 	tagMutex       sync.Mutex
@@ -19,7 +20,7 @@ var (
 
 // tagsテーブルの代替
 func initializeTagCache() {
-	tags := []*Tag{
+	tagsCache = []*Tag{
 		{ID: 1, Name: "ライブ配信"}, {ID: 2, Name: "ゲーム実況"}, {ID: 3, Name: "生放送"}, {ID: 4, Name: "アドバイス"}, {ID: 5, Name: "初心者歓迎"},
 		{ID: 6, Name: "プロゲーマー"}, {ID: 7, Name: "新作ゲーム"}, {ID: 8, Name: "レトロゲーム"}, {ID: 9, Name: "RPG"}, {ID: 10, Name: "FPS"},
 		{ID: 11, Name: "アクションゲーム"}, {ID: 12, Name: "対戦ゲーム"}, {ID: 13, Name: "マルチプレイ"}, {ID: 14, Name: "シングルプレイ"}, {ID: 15, Name: "ゲーム解説"},
@@ -45,7 +46,7 @@ func initializeTagCache() {
 	tagIdCache.Clear()
 	tagNameCache.Clear()
 	tagId.Store(103)
-	for _, tag := range tags {
+	for _, tag := range tagsCache {
 		tagIdCache.Set(strconv.FormatInt(tag.ID, 10), tag)
 		tagNameCache.Set(tag.Name, tag)
 	}
