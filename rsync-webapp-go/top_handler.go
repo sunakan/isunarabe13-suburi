@@ -56,9 +56,20 @@ func getStreamerThemeHandler(c echo.Context) error {
 
 	username := c.Param("username")
 
-	// todo: inner join
-	userModel := UserModel{}
-	err := dbConn.GetContext(ctx, &userModel, "SELECT id FROM users WHERE name = ?", username)
+	query := `
+select
+  users.id as "user_id"
+  , users.name as "user_name"
+  , users.display_name as "user_display_name"
+  , users.description as "user_description"
+  , themes.id as "theme_id"
+  , themes.dark_mode as "theme_dark_mode"
+from users
+inner join themes on themes.user_id = users.id
+where users.name = ?
+`
+	userModel := UserModel2{}
+	err := dbConn.GetContext(ctx, &userModel, query, username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
 	}
@@ -66,14 +77,9 @@ func getStreamerThemeHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
-	themeModel := ThemeModel{}
-	if err := dbConn.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user theme: "+err.Error())
-	}
-
 	theme := Theme{
-		ID:       themeModel.ID,
-		DarkMode: themeModel.DarkMode,
+		ID:       userModel.ThemeID,
+		DarkMode: userModel.ThemeDarkMode,
 	}
 
 	return c.JSON(http.StatusOK, theme)
