@@ -37,6 +37,13 @@ setup-tools: tmp/servers ## 各Hostでツール群をインストール
 	@cat tmp/servers | xargs -I{} ssh {} "sudo apt-get update && sudo apt-get install -y psmisc tmux tree make jq neovim git"
 
 ################################################################################
+# Linux
+################################################################################
+.PHONY: increase-max-fd
+increase-max-fd: tmp/servers ## isuconユーザーのFD上限を増やす
+	@cat tmp/servers | xargs -I{} rsync -az -e ssh --rsync-path="sudo rsync" ./linux/etc/security/limits.conf {}:/etc/security/limits.conf
+
+################################################################################
 # MySQL
 ################################################################################
 .PHONY: enable-mysql-slowquery-log
@@ -133,6 +140,7 @@ setup-basic: ## 最低限のセットアップ
 	@make mysql-bind-address-0000
 	@make create-mysql-user
 	@make enable-mysql-slowquery-log
+	@make increase-max-fd
 
 ################################################################################
 # プログラミング言語の切り替え
@@ -151,6 +159,10 @@ switch-python: tmp/servers ## isupipeの言語をpythonにする(再起動)
 switch-ruby: tmp/servers## isupipeの言語をrubyにする(再起動)
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "systemctl list-units --type=service --all | grep isupipe | cut -d' ' -f3 | xargs -I{} sudo systemctl disable --now {}"
 	@cat tmp/servers | grep -v 'bench' | xargs -I{} ssh {} "sudo systemctl enable --now isupipe-ruby"
+
+################################################################################
+#
+################################################################################
 
 ################################################################################
 # Kaizen
